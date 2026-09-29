@@ -397,21 +397,17 @@ fn apply(action: &Action) {
     let Some(shared) = SHARED.get() else { return };
     unsafe {
         match action {
-            Action::Grab => {
-                if !shared.grabbed.swap(true, Ordering::SeqCst) {
-                    CGAssociateMouseAndMouseCursorPosition(false);
-                    CGDisplayHideCursor(CGMainDisplayID());
-                }
+            Action::Grab if !shared.grabbed.swap(true, Ordering::SeqCst) => {
+                CGAssociateMouseAndMouseCursorPosition(false);
+                CGDisplayHideCursor(CGMainDisplayID());
             }
-            Action::Release { warp } => {
-                if shared.grabbed.swap(false, Ordering::SeqCst) {
-                    CGWarpMouseCursorPosition(CGPoint {
-                        x: warp.x,
-                        y: warp.y,
-                    });
-                    CGAssociateMouseAndMouseCursorPosition(true);
-                    CGDisplayShowCursor(CGMainDisplayID());
-                }
+            Action::Release { warp } if shared.grabbed.swap(false, Ordering::SeqCst) => {
+                CGWarpMouseCursorPosition(CGPoint {
+                    x: warp.x,
+                    y: warp.y,
+                });
+                CGAssociateMouseAndMouseCursorPosition(true);
+                CGDisplayShowCursor(CGMainDisplayID());
             }
             _ => {}
         }

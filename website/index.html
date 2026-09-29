@@ -3,124 +3,226 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Kiore: one mouse, every computer</title>
-  <meta name="description" content="Kiore lets your Mac's keyboard, mouse, clipboard and sound move onto the computer next to it. Push the cursor off the edge and keep going.">
-  <meta property="og:title" content="Kiore: one mouse, every computer">
-  <meta property="og:description" content="Push your cursor off the edge of your Mac's screen and keep going onto the computer beside it.">
+  <title>Kiore — One mouse, every computer</title>
+  <meta name="description" content="Push your cursor off the edge of your Mac's screen and keep going, onto the computer beside it. Your keyboard, clipboard and sound come too.">
+  <meta property="og:title" content="Kiore — One mouse, every computer">
+  <meta property="og:description" content="Push your cursor off the edge of your Mac's screen and keep going, onto the computer beside it.">
   <meta property="og:image" content="https://galengreen.github.io/kiore/og.png">
-  <meta name="theme-color" content="#0b0b14">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#080808">
   <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,400&display=swap">
   <link rel="stylesheet" href="style.css">
+  <script>document.documentElement.classList.add("js")</script>
 </head>
 <body>
-  <nav class="nav">
-    <a class="brand" href="#top"><img src="logo.svg" alt=""> Kiore</a>
-    <a class="nav-link" href="https://github.com/galengreen/kiore">GitHub</a>
+  <nav class="nav" aria-label="Main">
+    <a class="nav-brand" href="#top"><img src="logo.svg" alt=""><span>Kiore</span></a>
+    <div class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#privacy">Privacy</a>
+    </div>
+    <a class="pill pill-light pill-sm" href="#download">Download <svg class="i" viewBox="0 0 16 16"><path d="M8 2.5v10m0 0L4 8.5m4 4 4-4"/></svg></a>
   </nav>
 
   <header class="hero" id="top">
-    <img class="hero-logo" src="logo.svg" alt="Kiore logo: a mouse peeking over the edge of a screen">
-    <h1>One mouse.<br><span class="grad">Every computer.</span></h1>
-    <p class="tagline">Push your cursor off the edge of your Mac's screen and keep going, onto the computer beside it. Your keyboard, clipboard and sound come too.</p>
-    <p class="meaning"><strong>Kiore</strong> <span class="say">/kee-oh-reh/</span> · Māori for mouse</p>
-    <div class="cta">
-      <a class="btn primary" href="#download">Download</a>
-      <a class="btn ghost" href="https://github.com/galengreen/kiore">View on GitHub</a>
-    </div>
-  </header>
+    <div class="panel hero-panel">
+      <div class="hero-copy">
+        <a class="badge" href="#features"><span class="badge-tag">New</span>Sound follows you too <svg class="i" viewBox="0 0 16 16"><path d="M3 8h10m0 0L9 4m4 4-4 4"/></svg></a>
+        <h1>One mouse.<br>Every computer.</h1>
+        <p class="lede">Push your cursor off the edge of your Mac's screen and keep going, onto the computer beside it. Your keyboard, clipboard and sound come too.</p>
+        <div class="actions">
+          <a class="pill pill-light" href="https://github.com/galengreen/kiore/releases/latest/download/Kiore-macos.dmg">Download for macOS <svg class="i" viewBox="0 0 16 16"><path d="M8 2.5v10m0 0L4 8.5m4 4 4-4"/></svg></a>
+          <button class="cmd" type="button" data-copy="curl -fsSL https://galengreen.github.io/kiore/install.sh | sh" aria-label="Copy the Linux install command">
+            <span class="cmd-text"><span class="dim">$</span> curl -fsSL https://galengreen.github.io/kiore/install.sh | sh</span>
+            <svg class="i copy-icon" viewBox="0 0 16 16"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6"/><path d="M10.5 3.5v-.4A1.6 1.6 0 0 0 8.9 1.5H3.1a1.6 1.6 0 0 0-1.6 1.6v5.8a1.6 1.6 0 0 0 1.6 1.6h.4"/></svg>
+          </button>
+        </div>
+        <p class="meaning mono">Kiore <span>/kee-oh-reh/</span> · Māori for mouse</p>
+      </div>
 
-  <section class="demo-wrap" aria-label="Animated demo">
-    <div class="demo" id="demo">
-      <!-- The iMac on the left -->
-      <div class="imac">
-        <div class="screen imac-screen">
-          <div class="bar"><span class="ws">1</span><span class="ws on">2</span><span class="ws">3</span><span class="clock">10:42</span></div>
-          <div class="term" id="term">
-            <div class="term-title">~ foot</div>
-            <div class="term-body"><span class="prompt">❯</span> <span id="term-text"></span><span class="caret" id="caret"></span></div>
+      <div class="stage">
+        <div class="demo" id="demo" aria-label="Animated demo">
+          <div class="imac">
+            <div class="imac-body">
+              <div class="screen imac-screen">
+                <div class="bar"><span class="ws">1</span><span class="ws on">2</span><span class="ws">3</span><span class="clock">10:42</span></div>
+                <div class="term" id="term">
+                  <div class="term-title">~ foot</div>
+                  <div class="term-body"><span class="prompt">❯</span> <span id="term-text"></span><span class="caret"></span></div>
+                </div>
+              </div>
+              <div class="imac-chin"></div>
+            </div>
+            <div class="imac-stand"></div>
           </div>
-        </div>
-        <div class="imac-chin"></div>
-        <div class="imac-stand"></div>
-      </div>
-      <!-- The MacBook on the right -->
-      <div class="macbook">
-        <div class="screen mac-screen">
-          <div class="menubar"><span></span><span class="mb-icon"><img src="logo.svg" alt=""></span></div>
-          <div class="note" id="note">
-            <div class="note-title">Notes</div>
-            <div class="note-body"><span id="note-text">Kia ora from my Mac</span></div>
+          <div class="macbook">
+            <div class="mac-lid">
+              <div class="screen mac-screen">
+                <div class="menubar"><span></span><img src="logo.svg" alt=""></div>
+                <div class="note" id="note">
+                  <div class="note-title">Notes</div>
+                  <div class="note-body"><span id="note-text">Kia ora from my Mac</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="mac-base"></div>
+            <div class="phones" id="phones" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0 1 16 0v2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><rect x="3" y="13" width="4" height="7" rx="2" fill="currentColor"/><rect x="17" y="13" width="4" height="7" rx="2" fill="currentColor"/></svg>
+            </div>
           </div>
-        </div>
-        <div class="mac-base"></div>
-        <div class="phones" id="phones" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0 1 16 0v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="3" y="13" width="4" height="7" rx="2" fill="currentColor"/><rect x="17" y="13" width="4" height="7" rx="2" fill="currentColor"/></svg>
+          <div class="edge-glow" id="glow-mac"></div>
+          <div class="edge-glow" id="glow-imac"></div>
+          <div class="keycap" id="keycap"></div>
+          <div class="notes" id="notes"></div>
+          <svg class="cursor" id="cursor" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 8-6 1.6L10.4 19z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg>
         </div>
       </div>
-      <div class="edge-glow" id="glow-mac"></div>
-      <div class="edge-glow" id="glow-imac"></div>
-      <div class="keycap" id="keycap"></div>
-      <div class="notes" id="notes"></div>
-      <svg class="cursor" id="cursor" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 8-6 1.6L10.4 19z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg>
     </div>
     <p class="caption" id="caption">Push off the edge…</p>
-  </section>
+  </header>
 
-  <section class="features">
-    <article>
-      <h3>Just push off the edge</h3>
-      <p>Arrange your computers like the Displays settings on your Mac. The cursor crosses wherever the screens meet, even if they don't quite line up.</p>
-    </article>
-    <article>
-      <h3>Never gets stuck</h3>
-      <p>Your Mac is always in charge. A lock screen, a frozen computer or a Wi-Fi drop-out can't trap the cursor: it comes straight home.</p>
-    </article>
-    <article>
-      <h3>Clipboard and sound, too</h3>
-      <p>Copy on one computer and paste on the other. The other computer's sound plays through whatever your Mac is using, AirPods included.</p>
-    </article>
-    <article>
-      <h3>Private by design</h3>
-      <p>Pair once with a four-digit code. Everything is encrypted and stays on your network: no account, no cloud.</p>
-    </article>
-    <article>
-      <h3>Feels at home</h3>
-      <p>A menu bar app on the Mac and a bar icon on Omarchy. ⌘C, ⌘V and ⌘Tab do what your fingers expect.</p>
-    </article>
-    <article>
-      <h3>Nothing to set up</h3>
-      <p>Computers find each other by themselves and pick the fastest connection. Wired beats Wi-Fi, automatically.</p>
-    </article>
-  </section>
-
-  <section class="download" id="download">
-    <h2>Get Kiore</h2>
-    <p class="sub">Install it on both computers, then click <strong>Pair…</strong> on your Mac.</p>
-    <div class="cards">
-      <div class="card">
-        <h3>Mac</h3>
-        <p class="req">macOS 14 or later · Apple Silicon and Intel</p>
-        <a class="btn primary wide" href="https://github.com/galengreen/kiore/releases/latest/download/Kiore-macos.dmg">Download for Mac</a>
-        <p class="fine">Not notarised yet: the first time, open <em>System Settings → Privacy &amp; Security</em> and click <em>Open Anyway</em>.</p>
+  <main>
+    <section class="section reveal" id="how">
+      <p class="eyebrow">How it works</p>
+      <h2>Three steps.<br>Then forget it's there.</h2>
+      <p class="section-lede">Kiore runs quietly on both computers and finds the fastest way between them. Nothing to configure unless you want to.</p>
+      <div class="grid grid-3">
+        <article class="card">
+          <div class="art art-install">
+            <div class="mini-window"><span class="mini-dot"></span><span class="mini-dot"></span><span class="mini-dot"></span>
+              <div class="mini-app"><img src="logo.svg" alt=""><span>Kiore</span></div></div>
+            <div class="mini-term mono"><span class="dim">$</span> curl …/install.sh | sh<br><span class="ok">✓</span> Kiore is running</div>
+          </div>
+          <div class="card-copy"><h3>Install on both</h3><p>A menu bar app on your Mac. One command on Linux, no sudo.</p></div>
+        </article>
+        <article class="card">
+          <div class="art art-pair">
+            <div class="code mono"><span>2</span><span>7</span><span>1</span><span>6</span></div>
+            <p class="code-note">Type this on Galen's MacBook Pro</p>
+          </div>
+          <div class="card-copy"><h3>Pair once</h3><p>Your other computer shows a four-digit code. Type it on your Mac and they remember each other.</p></div>
+        </article>
+        <article class="card">
+          <div class="art art-arrange">
+            <div class="arr arr-other">omarchy</div>
+            <div class="arr arr-dell">Display</div>
+            <div class="arr arr-mac">This Mac</div>
+            <span class="arr-edge arr-edge-1"></span><span class="arr-edge arr-edge-2"></span>
+          </div>
+          <div class="card-copy"><h3>Arrange</h3><p>Drag your computers to where they sit on your desk, just like your Mac's display settings.</p></div>
+        </article>
       </div>
-      <div class="card">
-        <h3>Linux</h3>
-        <p class="req">Wayland: Hyprland and Omarchy · x86-64 and ARM</p>
-        <div class="cmd">
-          <code id="cmd">curl -fsSL https://galengreen.github.io/kiore/install.sh | sh</code>
-          <button class="copy" id="copy" type="button">Copy</button>
+    </section>
+
+    <section class="section reveal" id="features">
+      <p class="eyebrow">Features</p>
+      <h2>Your whole desk,<br>one set of hands.</h2>
+      <div class="grid grid-3">
+        <article class="card">
+          <div class="art art-stuck">
+            <div class="lock"><svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg><span>Locked</span></div>
+            <div class="home-arrow"><svg class="i" viewBox="0 0 16 16"><path d="M3 8h10m0 0L9 4m4 4-4 4"/></svg><span class="mono">cursor home</span></div>
+          </div>
+          <div class="card-copy"><h3>Never gets stuck</h3><p>Your Mac is always in charge. A lock screen, a frozen computer or a Wi-Fi drop-out can't trap the cursor.</p></div>
+        </article>
+        <article class="card">
+          <div class="art art-clip">
+            <div class="chip">Kia ora from my Mac</div>
+            <div class="keys mono"><kbd>⌘</kbd><kbd>C</kbd><span class="dim">→</span><kbd>⌘</kbd><kbd>V</kbd></div>
+          </div>
+          <div class="card-copy"><h3>Clipboard comes too</h3><p>Copy on one computer, move across, paste on the other. It travels with the cursor.</p></div>
+        </article>
+        <article class="card">
+          <div class="art art-sound">
+            <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="sound-label mono">omarchy → AirPods Pro</div>
+          </div>
+          <div class="card-copy"><h3>Sound comes too</h3><p>The other computer plays through whatever your Mac is using. Switch back any time.</p></div>
+        </article>
+        <article class="card">
+          <div class="art art-keys">
+            <div class="maprow mono"><kbd>⌘ C</kbd><span class="dim">→</span><kbd>Super C</kbd></div>
+            <div class="maprow mono"><kbd>⌘ T</kbd><span class="dim">→</span><kbd>Ctrl T</kbd></div>
+            <div class="maprow mono"><kbd>⌘ Tab</kbd><span class="dim">→</span><kbd>Super Tab</kbd></div>
+          </div>
+          <div class="card-copy"><h3>Shortcuts feel right</h3><p>Mac habits just work: copy and paste, new tabs, switching windows.</p></div>
+        </article>
+        <article class="card">
+          <div class="art art-wake">
+            <div class="zzz mono">z<span>z</span><span>z</span></div>
+            <div class="sleepy"><img src="logo.svg" alt=""></div>
+          </div>
+          <div class="card-copy"><h3>Wakes it up</h3><p>Move onto a dark or locked screen and it lights up. Push towards a sleeping computer to wake it.</p></div>
+        </article>
+        <article class="card">
+          <div class="art art-path">
+            <div class="route"><span class="mono">Ethernet</span><div class="meter"><i style="width:28%"></i></div><span class="mono">3 ms</span></div>
+            <div class="route dim-route"><span class="mono">Wi-Fi</span><div class="meter"><i style="width:74%"></i></div><span class="mono">9 ms</span></div>
+          </div>
+          <div class="card-copy"><h3>Fastest path, found for you</h3><p>Computers find each other on your network and pick the quickest connection. Wired beats Wi-Fi.</p></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section split reveal" id="privacy">
+      <div class="split-copy">
+        <p class="eyebrow">Private</p>
+        <h2>Stays on<br>your network.</h2>
+        <p class="section-lede left">Your keystrokes go straight to the computer beside you and nowhere else.</p>
+        <ul class="points">
+          <li><svg class="i" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.8"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg><div><h4>Encrypted end to end</h4><p>Every connection uses TLS 1.3, with keys that never leave each computer.</p></div></li>
+          <li><svg class="i" viewBox="0 0 16 16"><path d="M2.5 8a5.5 5.5 0 1 0 11 0 5.5 5.5 0 1 0-11 0M4.2 4.2l7.6 7.6"/></svg><div><h4>No account, no cloud</h4><p>Nothing to sign up for. Kiore only ever talks to your own computers.</p></div></li>
+          <li><svg class="i" viewBox="0 0 16 16"><path d="M3 5.5h10M3 10.5h10M6 2.5l-1 11M11 2.5l-1 11"/></svg><div><h4>Paired with a code</h4><p>The code never crosses the network, and wrong guesses lock pairing for a while.</p></div></li>
+        </ul>
+      </div>
+      <div class="split-art">
+        <div class="pair-card">
+          <div class="pair-head"><img src="logo.svg" alt=""><div><strong>Kiore</strong><span>Pairing with Galen's MacBook Pro</span></div></div>
+          <p class="pair-label mono">Pairing code</p>
+          <div class="code big mono"><span>2</span><span>7</span><span>1</span><span>6</span></div>
+          <p class="pair-note">Type this on Galen's MacBook Pro to connect it.</p>
         </div>
-        <p class="fine">No sudo needed. Or download a
-          <a href="https://github.com/galengreen/kiore/releases/latest/download/kiore-linux-x86_64.tar.gz">x86-64</a> /
-          <a href="https://github.com/galengreen/kiore/releases/latest/download/kiore-linux-aarch64.tar.gz">ARM</a>
-          package and run <code>./install.sh</code>.</p>
+        <div class="pair-card small">
+          <div class="pair-row"><span class="dot on"></span><div><strong>omarchy</strong><span>Connected · 3 ms</span></div></div>
+        </div>
       </div>
-    </div>
-    <p class="all"><a href="https://github.com/galengreen/kiore/releases">All releases</a> · <a href="https://github.com/galengreen/kiore#readme">How it works</a></p>
-  </section>
+    </section>
+
+    <section class="section reveal" id="download">
+      <div class="panel cta-panel">
+        <div class="cta-copy">
+          <img class="cta-icon" src="logo.svg" alt="Kiore icon">
+          <h2>Bring the computer<br>beside you within reach.</h2>
+          <p class="lede left">Free and open source. For a Mac and Linux (Wayland: Hyprland, Omarchy).</p>
+          <div class="actions left">
+            <a class="pill pill-light" href="https://github.com/galengreen/kiore/releases/latest/download/Kiore-macos.dmg">Download for macOS <svg class="i" viewBox="0 0 16 16"><path d="M8 2.5v10m0 0L4 8.5m4 4 4-4"/></svg></a>
+          </div>
+          <button class="cmd" type="button" data-copy="curl -fsSL https://galengreen.github.io/kiore/install.sh | sh" aria-label="Copy the Linux install command">
+            <span class="cmd-text"><span class="dim">$</span> curl -fsSL https://galengreen.github.io/kiore/install.sh | sh</span>
+            <svg class="i copy-icon" viewBox="0 0 16 16"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6"/><path d="M10.5 3.5v-.4A1.6 1.6 0 0 0 8.9 1.5H3.1a1.6 1.6 0 0 0-1.6 1.6v5.8a1.6 1.6 0 0 0 1.6 1.6h.4"/></svg>
+          </button>
+          <p class="fine">macOS 14+, Apple Silicon and Intel. Not notarised yet: the first time, open System Settings → Privacy &amp; Security and click Open Anyway.</p>
+          <a class="text-link" href="https://github.com/galengreen/kiore/releases">Release notes on GitHub <svg class="i" viewBox="0 0 16 16"><path d="M5 11 11 5m0 0H6m5 0v5"/></svg></a>
+        </div>
+      </div>
+    </section>
+  </main>
 
   <footer class="footer">
-    <p>Made in Aotearoa New Zealand · Open source under the MIT licence · <a href="https://github.com/galengreen/kiore">GitHub</a></p>
+    <div class="footer-top">
+      <a class="nav-brand" href="#top"><img src="logo.svg" alt=""><span>Kiore</span></a>
+      <p class="footer-tag">One mouse, every computer.</p>
+      <div class="footer-links">
+        <a href="https://github.com/galengreen/kiore/releases">Releases</a>
+        <a href="https://github.com/galengreen/kiore">GitHub</a>
+        <a href="https://galen.green">Galen Green</a>
+      </div>
+    </div>
+    <p class="footer-fine">Made in Aotearoa New Zealand.</p>
   </footer>
 
   <script src="demo.js"></script>

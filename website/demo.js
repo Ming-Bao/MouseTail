@@ -167,12 +167,27 @@
   }
 
   // Copy the Linux install command.
-  const copy = $("copy");
-  copy?.addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText($("cmd").textContent);
-      copy.textContent = "Copied";
-      setTimeout(() => (copy.textContent = "Copy"), 1500);
-    } catch {}
+  document.querySelectorAll("[data-copy]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(button.dataset.copy);
+        button.classList.add("copied");
+        const text = button.querySelector(".cmd-text");
+        const before = text.innerHTML;
+        text.textContent = "Copied. Paste it into a terminal on your Linux computer.";
+        setTimeout(() => { text.innerHTML = before; button.classList.remove("copied"); }, 1800);
+      } catch {}
+    });
   });
+
+  // Sections fade in as they scroll into view.
+  const reveal = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (e.isIntersecting) {
+        e.target.classList.add("in");
+        reveal.unobserve(e.target);
+      }
+    }
+  }, { rootMargin: "0px 0px -10% 0px" });
+  document.querySelectorAll(".reveal").forEach((el) => reveal.observe(el));
 })();

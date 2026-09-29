@@ -1,0 +1,8 @@
+[package]
+name = "spike-discovery"
+version = "0.0.0"
+edition.workspace = true
+publish = false
+
+[dependencies]
+mdns-sd = "0.21"

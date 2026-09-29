@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36">
+  <defs>
+    <mask id="face">
+      <rect width="36" height="36" fill="#fff"/>
+      <circle cx="14" cy="20.5" r="1.9" fill="#000"/>
+      <circle cx="22" cy="20.5" r="1.9" fill="#000"/>
+      <ellipse cx="18" cy="25" rx="1.9" ry="1.4" fill="#000"/>
+    </mask>
+  </defs>
+  <g mask="url(#face)">
+    <circle cx="9.5" cy="11" r="7"/>
+    <circle cx="26.5" cy="11" r="7"/>
+    <ellipse cx="18" cy="21.5" rx="12" ry="11"/>
+  </g>
+</svg>

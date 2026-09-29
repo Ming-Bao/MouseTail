@@ -1,0 +1,58 @@
+name: Release
+
+# Push a tag like v0.1.0 to build Kiore for Mac and Linux and publish a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    strategy:
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libpipewire-0.3-dev libopus-dev clang pkg-config
+      - run: scripts/package-linux.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.runner }}
+          path: dist/*.tar.gz
+
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - run: scripts/package-mac.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/Kiore-macos.dmg
+
+  publish:
+    needs: [linux, macos]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if [[ "$GITHUB_REF_TYPE" != tag ]]; then tag="v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"; fi
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "Kiore $tag" --notes-file .github/release-notes.md
+          gh release upload "$tag" dist/* --clobber

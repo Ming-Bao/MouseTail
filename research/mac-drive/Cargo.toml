@@ -1,0 +1,5 @@
+[package]
+name = "spike-mac-drive"
+version = "0.0.0"
+edition.workspace = true
+publish = false

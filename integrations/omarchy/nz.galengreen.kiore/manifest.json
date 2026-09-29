@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "nz.galengreen.kiore",
+  "name": "Kiore",
+  "version": "0.1.0",
+  "author": "Galen Green",
+  "license": "MIT",
+  "description": "Use your Mac's keyboard and mouse on this computer. Shows what's connected and any pairing code.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Widget.qml"
+  },
+  "barWidget": {
+    "displayName": "Kiore",
+    "description": "Keyboard and mouse sharing status, pairing codes and clipboard setting.",
+    "category": "Network",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

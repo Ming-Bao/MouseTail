@@ -1,0 +1,9 @@
+[package]
+name = "spike-path-probe"
+version = "0.0.0"
+edition.workspace = true
+publish = false
+
+[dependencies]
+kiore-core = { path = "../../crates/core" }
+tokio = { workspace = true }

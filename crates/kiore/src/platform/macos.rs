@@ -1,0 +1,510 @@
+//! macOS backend: a Quartz event tap feeds the `Controller`; while the cursor is on another
+//! machine the local cursor is hidden and frozen and input is swallowed.
+//!
+//! The tap callback runs the controller synchronously so it can decide to swallow each event
+//! inline. Network actions go out through a channel; grab/release happen immediately.
+
+use std::ffi::c_void;
+use std::ptr;
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+use std::sync::{Arc, Mutex, OnceLock, mpsc};
+use std::thread;
+
+use anyhow::Context;
+use core_foundation::base::TCFType;
+use core_foundation::boolean::CFBoolean;
+use core_foundation::dictionary::CFDictionary;
+use core_foundation::runloop::{CFRunLoop, kCFRunLoopCommonModes};
+use core_foundation::string::CFString;
+use core_graphics::display::CGDisplay;
+use kiore_core::controller::{Action, Controller, Input};
+use kiore_core::keys::{ev, mac_to_evdev};
+use kiore_core::layout::{Point, Rect};
+use kiore_core::proto::{DisplayInfo, Scroll};
+use tokio::sync::mpsc::UnboundedSender;
+
+// ---------------------------------------------------------------------------------------------
+// Quartz FFI
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct CGPoint {
+    x: f64,
+    y: f64,
+}
+
+type CGEventRef = *mut c_void;
+type TapCallback = extern "C" fn(*mut c_void, u32, CGEventRef, *mut c_void) -> CGEventRef;
+
+#[link(name = "ApplicationServices", kind = "framework")]
+unsafe extern "C" {
+    fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
+    fn CGPreflightListenEventAccess() -> bool;
+    fn CGRequestListenEventAccess() -> bool;
+    fn CGEventTapCreate(
+        tap: u32,
+        place: u32,
+        options: u32,
+        mask: u64,
+        callback: TapCallback,
+        info: *mut c_void,
+    ) -> *mut c_void;
+    fn CGEventTapEnable(tap: *mut c_void, enable: bool);
+    fn CGEventGetLocation(event: CGEventRef) -> CGPoint;
+    fn CGEventGetIntegerValueField(event: CGEventRef, field: u32) -> i64;
+    fn CGEventGetDoubleValueField(event: CGEventRef, field: u32) -> f64;
+    fn CGEventGetFlags(event: CGEventRef) -> u64;
+    fn CGAssociateMouseAndMouseCursorPosition(connected: bool) -> i32;
+    fn CGWarpMouseCursorPosition(point: CGPoint) -> i32;
+    fn CGDisplayHideCursor(display: u32) -> i32;
+    fn CGDisplayShowCursor(display: u32) -> i32;
+    fn CGMainDisplayID() -> u32;
+    fn CGGetOnlineDisplayList(max: u32, ids: *mut u32, count: *mut u32) -> i32;
+    fn CGDisplayMirrorsDisplay(display: u32) -> u32;
+    fn CGEventSourceCreate(state: i32) -> *mut c_void;
+    fn CGEventSourceSetLocalEventsSuppressionInterval(source: *mut c_void, seconds: f64);
+    fn CFMachPortCreateRunLoopSource(
+        allocator: *const c_void,
+        port: *mut c_void,
+        order: isize,
+    ) -> *mut c_void;
+    fn CFRunLoopAddSource(rl: *mut c_void, source: *mut c_void, mode: *const c_void);
+    fn CFRunLoopGetCurrent() -> *mut c_void;
+    // Private but long-standing (used by Synergy, Barrier, Deskflow): lets a background
+    // process hide the cursor.
+    fn _CGSDefaultConnection() -> i32;
+    fn CGSSetConnectionProperty(
+        cid: i32,
+        target: i32,
+        key: *const c_void,
+        value: *const c_void,
+    ) -> i32;
+}
+
+// CGEventType
+const LEFT_DOWN: u32 = 1;
+const LEFT_UP: u32 = 2;
+const RIGHT_DOWN: u32 = 3;
+const RIGHT_UP: u32 = 4;
+const MOUSE_MOVED: u32 = 5;
+const LEFT_DRAGGED: u32 = 6;
+const RIGHT_DRAGGED: u32 = 7;
+const KEY_DOWN: u32 = 10;
+const KEY_UP: u32 = 11;
+const FLAGS_CHANGED: u32 = 12;
+const SCROLL_WHEEL: u32 = 22;
+const OTHER_DOWN: u32 = 25;
+const OTHER_UP: u32 = 26;
+const OTHER_DRAGGED: u32 = 27;
+const TAP_DISABLED_BY_TIMEOUT: u32 = 0xFFFF_FFFE;
+const TAP_DISABLED_BY_USER_INPUT: u32 = 0xFFFF_FFFF;
+/// Trackpad gestures (rotate, begin/end, gesture, magnify, swipe, smart magnify): swallowed
+/// while remote so pinches and swipes don't act on the Mac.
+const GESTURES: [u32; 7] = [18, 19, 20, 29, 30, 31, 32];
+
+// CGEventField
+const MOUSE_BUTTON_NUMBER: u32 = 3;
+const MOUSE_DELTA_X: u32 = 4;
+const MOUSE_DELTA_Y: u32 = 5;
+const KEY_AUTOREPEAT: u32 = 8;
+const KEY_KEYCODE: u32 = 9;
+const SCROLL_DELTA_AXIS_1: u32 = 11;
+const SCROLL_DELTA_AXIS_2: u32 = 12;
+const SCROLL_IS_CONTINUOUS: u32 = 88;
+const SCROLL_POINT_DELTA_AXIS_1: u32 = 96;
+const SCROLL_POINT_DELTA_AXIS_2: u32 = 97;
+
+const SESSION_TAP: u32 = 1;
+const HEAD_INSERT: u32 = 0;
+const TAP_DEFAULT: u32 = 0;
+const COMBINED_SESSION_STATE: i32 = 0;
+
+// ---------------------------------------------------------------------------------------------
+// Capture
+
+struct Shared {
+    controller: Arc<Mutex<Controller>>,
+    actions: UnboundedSender<Action>,
+    grabbed: AtomicBool,
+    tap: AtomicPtr<c_void>,
+}
+
+static SHARED: OnceLock<Shared> = OnceLock::new();
+
+pub struct Capture;
+
+impl Capture {
+    /// Start capturing. `prompt` asks macOS to show its permission dialog if needed (do that
+    /// once; later retries just check quietly).
+    pub fn start(
+        controller: Arc<Mutex<Controller>>,
+        actions: UnboundedSender<Action>,
+        prompt: bool,
+    ) -> anyhow::Result<Self> {
+        ensure_permissions(prompt)?;
+        SHARED
+            .set(Shared {
+                controller,
+                actions,
+                grabbed: AtomicBool::new(false),
+                tap: AtomicPtr::new(ptr::null_mut()),
+            })
+            .map_err(|_| anyhow::anyhow!("capture already started"))?;
+
+        unsafe {
+            // Let our warp take effect immediately rather than ignoring input for 250 ms.
+            let source = CGEventSourceCreate(COMBINED_SESSION_STATE);
+            if !source.is_null() {
+                CGEventSourceSetLocalEventsSuppressionInterval(source, 0.0);
+            }
+            let key = CFString::from_static_string("SetsCursorInBackground");
+            let cid = _CGSDefaultConnection();
+            CGSSetConnectionProperty(
+                cid,
+                cid,
+                key.as_concrete_TypeRef() as *const c_void,
+                CFBoolean::true_value().as_concrete_TypeRef() as *const c_void,
+            );
+        }
+
+        let (ready_tx, ready_rx) = mpsc::channel();
+        thread::Builder::new()
+            .name("event-tap".into())
+            .spawn(move || run_tap(ready_tx))?;
+        ready_rx.recv().context("event tap thread died")??;
+        Ok(Self)
+    }
+
+    pub fn supported() -> bool {
+        true
+    }
+
+    /// Carry out a grab or release decided outside the tap (e.g. peer disconnected).
+    pub fn apply(&self, action: &Action) {
+        apply(action);
+    }
+}
+
+fn ensure_permissions(prompt: bool) -> anyhow::Result<()> {
+    let options = CFDictionary::from_CFType_pairs(&[(
+        CFString::from_static_string("AXTrustedCheckOptionPrompt").as_CFType(),
+        CFBoolean::from(prompt).as_CFType(),
+    )]);
+    let accessibility =
+        unsafe { AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef() as *const c_void) };
+    let monitoring =
+        unsafe { CGPreflightListenEventAccess() || (prompt && CGRequestListenEventAccess()) };
+    anyhow::ensure!(
+        accessibility && monitoring,
+        "Kiore needs Accessibility and Input Monitoring permission \
+         (System Settings → Privacy & Security), then restart it"
+    );
+    Ok(())
+}
+
+fn run_tap(ready: mpsc::Sender<anyhow::Result<()>>) {
+    let mut mask: u64 = 0;
+    for t in [
+        LEFT_DOWN,
+        LEFT_UP,
+        RIGHT_DOWN,
+        RIGHT_UP,
+        MOUSE_MOVED,
+        LEFT_DRAGGED,
+        RIGHT_DRAGGED,
+        KEY_DOWN,
+        KEY_UP,
+        FLAGS_CHANGED,
+        SCROLL_WHEEL,
+        OTHER_DOWN,
+        OTHER_UP,
+        OTHER_DRAGGED,
+    ]
+    .into_iter()
+    .chain(GESTURES)
+    {
+        mask |= 1 << t;
+    }
+    unsafe {
+        let tap = CGEventTapCreate(
+            SESSION_TAP,
+            HEAD_INSERT,
+            TAP_DEFAULT,
+            mask,
+            tap_callback,
+            ptr::null_mut(),
+        );
+        if tap.is_null() {
+            let _ = ready.send(Err(anyhow::anyhow!(
+                "couldn't create the event tap (permission missing?)"
+            )));
+            return;
+        }
+        SHARED.get().unwrap().tap.store(tap, Ordering::SeqCst);
+        let source = CFMachPortCreateRunLoopSource(ptr::null(), tap, 0);
+        CFRunLoopAddSource(
+            CFRunLoopGetCurrent(),
+            source,
+            kCFRunLoopCommonModes as *const c_void,
+        );
+        CGEventTapEnable(tap, true);
+    }
+    let _ = ready.send(Ok(()));
+    CFRunLoop::run_current();
+}
+
+extern "C" fn tap_callback(
+    _proxy: *mut c_void,
+    etype: u32,
+    event: CGEventRef,
+    _info: *mut c_void,
+) -> CGEventRef {
+    let Some(shared) = SHARED.get() else {
+        return event;
+    };
+    if etype == TAP_DISABLED_BY_TIMEOUT || etype == TAP_DISABLED_BY_USER_INPUT {
+        // macOS turns slow taps off; turn it straight back on.
+        unsafe { CGEventTapEnable(shared.tap.load(Ordering::SeqCst), true) };
+        return event;
+    }
+    let grabbed = shared.grabbed.load(Ordering::SeqCst);
+    let inputs = unsafe { to_inputs(etype, event, grabbed) };
+    if etype != MOUSE_MOVED {
+        tracing::trace!("tap event {etype} grabbed={grabbed} -> {inputs:?}");
+    }
+    if inputs.is_empty() {
+        let swallow = grabbed && etype != MOUSE_MOVED;
+        return if swallow { ptr::null_mut() } else { event };
+    }
+    let mut swallow = false;
+    // A poisoned lock means a panic elsewhere; keep going rather than wedge the user's input.
+    let mut controller = shared
+        .controller
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    for input in inputs {
+        let outcome = controller.handle(input);
+        swallow |= outcome.swallow;
+        for action in outcome.actions {
+            match action {
+                Action::Grab | Action::Release { .. } => apply(&action),
+                other => {
+                    let _ = shared.actions.send(other);
+                }
+            }
+        }
+    }
+    if swallow { ptr::null_mut() } else { event }
+}
+
+/// Translate a Quartz event into controller input. Events that should just be swallowed
+/// while remote (gestures, key repeats, unmapped keys) produce nothing.
+unsafe fn to_inputs(etype: u32, event: CGEventRef, grabbed: bool) -> Vec<Input> {
+    unsafe {
+        match etype {
+            MOUSE_MOVED | LEFT_DRAGGED | RIGHT_DRAGGED | OTHER_DRAGGED => {
+                let at = CGEventGetLocation(event);
+                vec![Input::Motion {
+                    at: Point::new(at.x, at.y),
+                    dx: CGEventGetDoubleValueField(event, MOUSE_DELTA_X),
+                    dy: CGEventGetDoubleValueField(event, MOUSE_DELTA_Y),
+                    dragging: etype != MOUSE_MOVED,
+                }]
+            }
+            LEFT_DOWN | LEFT_UP | RIGHT_DOWN | RIGHT_UP | OTHER_DOWN | OTHER_UP => {
+                let n = CGEventGetIntegerValueField(event, MOUSE_BUTTON_NUMBER);
+                let code = match n {
+                    0 => ev::BTN_LEFT,
+                    1 => ev::BTN_RIGHT,
+                    2 => ev::BTN_MIDDLE,
+                    3 => ev::BTN_SIDE,
+                    4 => ev::BTN_EXTRA,
+                    n => ev::BTN_LEFT + (n as u16).min(15),
+                };
+                let down = matches!(etype, LEFT_DOWN | RIGHT_DOWN | OTHER_DOWN);
+                vec![Input::Button { code, down }]
+            }
+            KEY_DOWN | KEY_UP => {
+                // The receiving side repeats held keys itself.
+                if grabbed && CGEventGetIntegerValueField(event, KEY_AUTOREPEAT) != 0 {
+                    return vec![];
+                }
+                let vk = CGEventGetIntegerValueField(event, KEY_KEYCODE) as u16;
+                match mac_to_evdev(vk) {
+                    Some(code) => vec![Input::Key {
+                        code,
+                        down: etype == KEY_DOWN,
+                    }],
+                    None => vec![],
+                }
+            }
+            FLAGS_CHANGED => {
+                let vk = CGEventGetIntegerValueField(event, KEY_KEYCODE) as u16;
+                let flags = CGEventGetFlags(event);
+                let Some(code) = mac_to_evdev(vk) else {
+                    return vec![];
+                };
+                if code == ev::CAPSLOCK {
+                    // Caps Lock reports a state change, not press/release: send a tap.
+                    return vec![
+                        Input::Key { code, down: true },
+                        Input::Key { code, down: false },
+                    ];
+                }
+                // Device-dependent bits distinguish left from right modifiers.
+                let bit = match vk {
+                    0x3B => 0x0000_0001, // left control
+                    0x38 => 0x0000_0002, // left shift
+                    0x3C => 0x0000_0004, // right shift
+                    0x37 => 0x0000_0008, // left command
+                    0x36 => 0x0000_0010, // right command
+                    0x3A => 0x0000_0020, // left option
+                    0x3D => 0x0000_0040, // right option
+                    0x3E => 0x0000_2000, // right control
+                    _ => return vec![],
+                };
+                vec![Input::Key {
+                    code,
+                    down: flags & bit != 0,
+                }]
+            }
+            SCROLL_WHEEL => {
+                let continuous = CGEventGetIntegerValueField(event, SCROLL_IS_CONTINUOUS) != 0;
+                // Quartz: positive = content towards the top/left; Wayland is the reverse.
+                let scroll = if continuous {
+                    Scroll {
+                        dx: -CGEventGetDoubleValueField(event, SCROLL_POINT_DELTA_AXIS_2),
+                        dy: -CGEventGetDoubleValueField(event, SCROLL_POINT_DELTA_AXIS_1),
+                        notches: None,
+                    }
+                } else {
+                    let nx = -CGEventGetIntegerValueField(event, SCROLL_DELTA_AXIS_2) as i32;
+                    let ny = -CGEventGetIntegerValueField(event, SCROLL_DELTA_AXIS_1) as i32;
+                    Scroll {
+                        dx: nx as f64 * 15.0,
+                        dy: ny as f64 * 15.0,
+                        notches: Some((nx, ny)),
+                    }
+                };
+                vec![Input::Scroll(scroll)]
+            }
+            _ => vec![],
+        }
+    }
+}
+
+fn apply(action: &Action) {
+    let Some(shared) = SHARED.get() else { return };
+    unsafe {
+        match action {
+            Action::Grab => {
+                if !shared.grabbed.swap(true, Ordering::SeqCst) {
+                    CGAssociateMouseAndMouseCursorPosition(false);
+                    CGDisplayHideCursor(CGMainDisplayID());
+                }
+            }
+            Action::Release { warp } => {
+                if shared.grabbed.swap(false, Ordering::SeqCst) {
+                    CGWarpMouseCursorPosition(CGPoint {
+                        x: warp.x,
+                        y: warp.y,
+                    });
+                    CGAssociateMouseAndMouseCursorPosition(true);
+                    CGDisplayShowCursor(CGMainDisplayID());
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// True while macOS withholds keystrokes from every app (a password field, a locked screen,
+/// Terminal's Secure Keyboard Entry). The mouse still works; typing can't be forwarded.
+pub fn keyboard_blocked() -> bool {
+    #[link(name = "Carbon", kind = "framework")]
+    unsafe extern "C" {
+        fn IsSecureEventInputEnabled() -> bool;
+    }
+    unsafe { IsSecureEventInputEnabled() }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Displays and notifications
+
+/// Online displays, including ones that are asleep (the "active" list drops those, and the
+/// layout mustn't change just because the screens blanked). Mirrors are skipped.
+pub fn displays() -> Vec<DisplayInfo> {
+    let mut ids = [0u32; 32];
+    let mut count = 0u32;
+    if unsafe { CGGetOnlineDisplayList(ids.len() as u32, ids.as_mut_ptr(), &mut count) } != 0 {
+        return vec![];
+    }
+    ids[..count as usize]
+        .iter()
+        .copied()
+        .filter(|id| unsafe { CGDisplayMirrorsDisplay(*id) } == 0)
+        .map(|id| {
+            let d = CGDisplay::new(id);
+            let b = d.bounds();
+            let px = d.display_mode().map(|m| m.pixel_width()).unwrap_or(0) as f64;
+            DisplayInfo {
+                id: id.to_string(),
+                name: if d.is_builtin() {
+                    "Built-in Display".into()
+                } else {
+                    format!("Display {id}")
+                },
+                rect: Rect::new(b.origin.x, b.origin.y, b.size.width, b.size.height),
+                scale: if b.size.width > 0.0 {
+                    px / b.size.width
+                } else {
+                    1.0
+                },
+                primary: d.is_main(),
+            }
+        })
+        .collect()
+}
+
+/// Plain-text clipboard contents, if any.
+pub fn clipboard_get() -> Option<(String, Vec<u8>)> {
+    let out = std::process::Command::new("pbpaste")
+        .env("LANG", "en_US.UTF-8")
+        .output()
+        .ok()?;
+    (out.status.success() && !out.stdout.is_empty()).then(|| (TEXT_MIME.to_string(), out.stdout))
+}
+
+pub fn clipboard_set(mime: &str, data: &[u8]) {
+    use std::io::Write;
+    if !mime.starts_with("text/") {
+        return;
+    }
+    let child = std::process::Command::new("pbcopy")
+        .env("LANG", "en_US.UTF-8")
+        .stdin(std::process::Stdio::piped())
+        .spawn();
+    if let Ok(mut child) = child {
+        if let Some(stdin) = child.stdin.as_mut() {
+            let _ = stdin.write_all(data);
+        }
+        let _ = child.wait();
+    }
+}
+
+const TEXT_MIME: &str = "text/plain;charset=utf-8";
+
+pub fn notify(title: &str, body: &str) {
+    let script = format!(
+        "display notification {} with title {}",
+        applescript_string(body),
+        applescript_string(title)
+    );
+    let _ = std::process::Command::new("osascript")
+        .args(["-e", &script])
+        .spawn();
+}
+
+fn applescript_string(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+}

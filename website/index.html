@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kiore: one mouse, every computer</title>
+  <meta name="description" content="Kiore lets your Mac's keyboard, mouse, clipboard and sound move onto the computer next to it. Push the cursor off the edge and keep going.">
+  <meta property="og:title" content="Kiore: one mouse, every computer">
+  <meta property="og:description" content="Push your cursor off the edge of your Mac's screen and keep going onto the computer beside it.">
+  <meta property="og:image" content="https://galengreen.github.io/kiore/og.png">
+  <meta name="theme-color" content="#0b0b14">
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand" href="#top"><img src="logo.svg" alt=""> Kiore</a>
+    <a class="nav-link" href="https://github.com/galengreen/kiore">GitHub</a>
+  </nav>
+
+  <header class="hero" id="top">
+    <img class="hero-logo" src="logo.svg" alt="Kiore logo: a mouse peeking over the edge of a screen">
+    <h1>One mouse.<br><span class="grad">Every computer.</span></h1>
+    <p class="tagline">Push your cursor off the edge of your Mac's screen and keep going, onto the computer beside it. Your keyboard, clipboard and sound come too.</p>
+    <p class="meaning"><strong>Kiore</strong> <span class="say">/kee-oh-reh/</span> · Māori for mouse</p>
+    <div class="cta">
+      <a class="btn primary" href="#download">Download</a>
+      <a class="btn ghost" href="https://github.com/galengreen/kiore">View on GitHub</a>
+    </div>
+  </header>
+
+  <section class="demo-wrap" aria-label="Animated demo">
+    <div class="demo" id="demo">
+      <!-- The iMac on the left -->
+      <div class="imac">
+        <div class="screen imac-screen">
+          <div class="bar"><span class="ws">1</span><span class="ws on">2</span><span class="ws">3</span><span class="clock">10:42</span></div>
+          <div class="term" id="term">
+            <div class="term-title">~ foot</div>
+            <div class="term-body"><span class="prompt">❯</span> <span id="term-text"></span><span class="caret" id="caret"></span></div>
+          </div>
+        </div>
+        <div class="imac-chin"></div>
+        <div class="imac-stand"></div>
+      </div>
+      <!-- The MacBook on the right -->
+      <div class="macbook">
+        <div class="screen mac-screen">
+          <div class="menubar"><span></span><span class="mb-icon"><img src="logo.svg" alt=""></span></div>
+          <div class="note" id="note">
+            <div class="note-title">Notes</div>
+            <div class="note-body"><span id="note-text">Kia ora from my Mac</span></div>
+          </div>
+        </div>
+        <div class="mac-base"></div>
+        <div class="phones" id="phones" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0 1 16 0v2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="3" y="13" width="4" height="7" rx="2" fill="currentColor"/><rect x="17" y="13" width="4" height="7" rx="2" fill="currentColor"/></svg>
+        </div>
+      </div>
+      <div class="edge-glow" id="glow-mac"></div>
+      <div class="edge-glow" id="glow-imac"></div>
+      <div class="keycap" id="keycap"></div>
+      <div class="notes" id="notes"></div>
+      <svg class="cursor" id="cursor" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 8-6 1.6L10.4 19z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg>
+    </div>
+    <p class="caption" id="caption">Push off the edge…</p>
+  </section>
+
+  <section class="features">
+    <article>
+      <h3>Just push off the edge</h3>
+      <p>Arrange your computers like the Displays settings on your Mac. The cursor crosses wherever the screens meet, even if they don't quite line up.</p>
+    </article>
+    <article>
+      <h3>Never gets stuck</h3>
+      <p>Your Mac is always in charge. A lock screen, a frozen computer or a Wi-Fi drop-out can't trap the cursor: it comes straight home.</p>
+    </article>
+    <article>
+      <h3>Clipboard and sound, too</h3>
+      <p>Copy on one computer and paste on the other. The other computer's sound plays through whatever your Mac is using, AirPods included.</p>
+    </article>
+    <article>
+      <h3>Private by design</h3>
+      <p>Pair once with a four-digit code. Everything is encrypted and stays on your network: no account, no cloud.</p>
+    </article>
+    <article>
+      <h3>Feels at home</h3>
+      <p>A menu bar app on the Mac and a bar icon on Omarchy. ⌘C, ⌘V and ⌘Tab do what your fingers expect.</p>
+    </article>
+    <article>
+      <h3>Nothing to set up</h3>
+      <p>Computers find each other by themselves and pick the fastest connection. Wired beats Wi-Fi, automatically.</p>
+    </article>
+  </section>
+
+  <section class="download" id="download">
+    <h2>Get Kiore</h2>
+    <p class="sub">Install it on both computers, then click <strong>Pair…</strong> on your Mac.</p>
+    <div class="cards">
+      <div class="card">
+        <h3>Mac</h3>
+        <p class="req">macOS 14 or later · Apple Silicon and Intel</p>
+        <a class="btn primary wide" href="https://github.com/galengreen/kiore/releases/latest/download/Kiore-macos.dmg">Download for Mac</a>
+        <p class="fine">Not notarised yet: the first time, open <em>System Settings → Privacy &amp; Security</em> and click <em>Open Anyway</em>.</p>
+      </div>
+      <div class="card">
+        <h3>Linux</h3>
+        <p class="req">Wayland: Hyprland and Omarchy · x86-64 and ARM</p>
+        <div class="cmd">
+          <code id="cmd">curl -fsSL https://galengreen.github.io/kiore/install.sh | sh</code>
+          <button class="copy" id="copy" type="button">Copy</button>
+        </div>
+        <p class="fine">No sudo needed. Or download a
+          <a href="https://github.com/galengreen/kiore/releases/latest/download/kiore-linux-x86_64.tar.gz">x86-64</a> /
+          <a href="https://github.com/galengreen/kiore/releases/latest/download/kiore-linux-aarch64.tar.gz">ARM</a>
+          package and run <code>./install.sh</code>.</p>
+      </div>
+    </div>
+    <p class="all"><a href="https://github.com/galengreen/kiore/releases">All releases</a> · <a href="https://github.com/galengreen/kiore#readme">How it works</a></p>
+  </section>
+
+  <footer class="footer">
+    <p>Made in Aotearoa New Zealand · Open source under the MIT licence · <a href="https://github.com/galengreen/kiore">GitHub</a></p>
+  </footer>
+
+  <script src="demo.js"></script>
+</body>
+</html>

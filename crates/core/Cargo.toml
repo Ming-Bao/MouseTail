@@ -1,0 +1,32 @@
+[package]
+name = "kiore-core"
+description = "Platform-independent core of Kiore: layout, cursor, keys, protocol, pairing, networking."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+bytes = "1"
+hex = "0.4"
+if-addrs = "0.15"
+hmac = "0.12"
+mdns-sd = "0.21"
+postcard = { version = "1", features = ["use-std"] }
+quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring", "log"] }
+rand = "0.8"
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging"] }
+sha2 = "0.10"
+spake2 = "0.4"
+toml = "0.9"
+
+# Opus: built in on macOS so the app is self-contained; the system library elsewhere.
+[target.'cfg(target_os = "macos")'.dependencies]
+opusic-sys = "0.7"
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+opusic-sys = { version = "0.7", default-features = false }

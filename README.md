@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>One mouse. Every computer.</strong><br>
-  Push your cursor off the edge of your Mac's screen and keep going, onto the computer beside it.<br>
+  Push your cursor off the edge of one computer's screen and keep going, onto the one beside it.<br>
   Your keyboard, clipboard and sound come too.
 </p>
 
@@ -32,16 +32,29 @@
 - **Clipboard follows you.** Copy on one computer, paste on the other.
 - **Sound follows you.** The other computer's sound plays through whatever your Mac is using,
   AirPods included. It appears there as a normal speaker you can switch away from.
-- **Shortcuts feel right.** ⌘C/⌘V/⌘X use Omarchy's universal copy and paste; ⌘Tab, ⌘Space,
-  ⌘Return, ⌘arrows and ⌘numbers go to the desktop; everything else (⌘T, ⌘F, ⌘W…) becomes Ctrl.
+- **Shortcuts feel right.** From a Mac to Linux, ⌘Tab, ⌘Space, ⌘Return, ⌘arrows and ⌘numbers
+  go to the desktop as Super, ⌘C/⌘V/⌘X use Omarchy's universal copy and paste where it has it,
+  and everything else (⌘T, ⌘F, ⌘W…) becomes Ctrl. From Linux to a Mac, Super is ⌘ and Alt is
+  Option, where those keys sit.
 - **Wakes things up.** Moving onto a blanked or locked screen turns it on; pushing towards a
   sleeping computer sends it a Wake-on-LAN packet.
 - **Nothing to configure.** Computers find each other on your network, pair once with a
   four-digit code and pick the fastest connection (wired beats Wi-Fi).
 
-Today Kiore shares a **Mac's** keyboard and mouse with **Linux on Wayland** (Hyprland,
-including [Omarchy](https://omarchy.org)). It's built so other platforms and the reverse
-direction can follow.
+Any computer can be the one you're sitting at: Mac → Linux, Linux → Mac, Mac → Mac and
+Linux → Linux, and each can be both at different times.
+
+| | Main computer (yours moves over) | Controlled (you move onto it) |
+|---|---|---|
+| **macOS 14+** | Yes | Yes |
+| **Linux: Hyprland** (incl. [Omarchy](https://omarchy.org)) | Yes | Yes |
+| **Linux: Sway, river, niri and other wlroots desktops** | Yes, untested | Yes, untested |
+| **Linux: KDE Plasma** | Yes, untested | Yes, after `enable-input.sh`, untested |
+| **Linux: GNOME** | Not yet | Yes, after `enable-input.sh`, untested |
+| **Windows** | Planned | Planned |
+
+Clipboard works everywhere except GNOME (which doesn't let background apps use the
+clipboard yet). Sound currently goes from Linux to a Mac.
 
 ## Install
 
@@ -54,19 +67,23 @@ direction can follow.
 3. Allow **Local Network**, **Accessibility** and **Input Monitoring** when asked. Kiore starts
    working as soon as they're on.
 
-**Linux** (Wayland: Hyprland / Omarchy), no sudo needed:
+**Linux** (Wayland), no sudo needed:
 
 ```sh
 curl -fsSL https://galengreen.github.io/kiore/install.sh | sh
 ```
 
 This installs `~/.local/bin/kiore`, runs it as a systemd user service that starts with your
-desktop and, on Omarchy, adds an icon to the bar. `uninstall.sh` in the
-[release download](https://github.com/galengreen/kiore/releases/latest) removes everything. To let your Mac wake this computer from sleep, run `enable-wake.sh` from
+desktop and, on Omarchy, adds an icon to the bar. On GNOME or KDE the installer will ask you
+to run `enable-input.sh` once (it needs your password) so other computers can control this
+one. `uninstall.sh` in the [release download](https://github.com/galengreen/kiore/releases/latest)
+removes everything. To let your Mac wake this computer from sleep, run `enable-wake.sh` from
 the same download (asks for your password once).
 
-**Pair:** click the mouse in your Mac's menu bar, click **Pair…** next to the other computer
-and type the code it shows. Then use **Arrange Displays…** to put it where it sits on your desk.
+**Pair:** on a Mac, click the mouse in the menu bar, then **Pair…** next to the other computer;
+on Linux, run `kiore pair`. Type the code the other computer shows. Then put it where it sits on
+your desk: **Arrange Displays…** on a Mac, or `kiore place <computer> left` on Linux. Both
+computers share one arrangement, so you only do this once.
 
 ## Privacy and security
 

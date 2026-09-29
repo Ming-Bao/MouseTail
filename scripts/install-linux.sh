@@ -97,4 +97,4 @@ if systemctl --user is-active --quiet lan-mouse.service 2>/dev/null; then
 fi
 
 echo
-say "Done. On your Mac, open Kiore and click Pair next to $(hostname)."
+say "Done. To connect another computer, click Pair… in Kiore there, or run: kiore pair"

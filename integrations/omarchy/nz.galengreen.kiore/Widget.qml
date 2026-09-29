@@ -35,6 +35,7 @@ Panel {
     if (!running) return "Not running"
     if (pairingCode) return "Pairing with " + (pairingCode.name || "another computer")
     if (controlledBy !== "") return "In use from " + controlledBy
+    if (status.controlling) return "Using " + nameOf(status.controlling)
     if (connectedPeers.length > 0) return "Connected to " + connectedPeers.map(function(p) { return p.name }).join(", ")
     return "Not connected"
   }
@@ -47,7 +48,7 @@ Panel {
   }
 
   function peerDetail(p) {
-    if (!p.paired) return "Found on your network. Pair it from your Mac."
+    if (!p.paired) return "Found on your network. Run kiore pair to connect it."
     if (!p.connected) return "Offline"
     if (status.controlled_by === p.id) return "Using this computer now"
     return "Connected"

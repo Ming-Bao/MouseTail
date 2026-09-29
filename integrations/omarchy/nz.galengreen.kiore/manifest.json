@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "Galen Green",
   "license": "MIT",
-  "description": "Use your Mac's keyboard and mouse on this computer. Shows what's connected and any pairing code.",
+  "description": "Share one keyboard, mouse, clipboard and sound between this computer and the ones beside it. Shows what's connected and any pairing code.",
   "kinds": [
     "bar-widget"
   ],

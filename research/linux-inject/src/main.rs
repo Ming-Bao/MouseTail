@@ -252,6 +252,22 @@ mod linux {
                 queue.roundtrip(&mut state).unwrap();
                 println!("pointer absolute: {}", if ok { "PASS" } else { "FAIL" });
             }
+            "key" => {
+                // key <evdev code>: press and release one key.
+                let code: u32 = args.get(1).and_then(|a| a.parse().ok()).unwrap_or(190);
+                let vkm = state.vkm.clone().expect("no virtual keyboard");
+                let kb = seat.get_keyboard(&qh, ());
+                queue.roundtrip(&mut state).unwrap();
+                let (format, fd, size) = state.keymap.take().expect("no keymap");
+                let vk = vkm.create_virtual_keyboard(&seat, &qh, ());
+                vk.keymap(format, fd.as_fd(), size);
+                queue.roundtrip(&mut state).unwrap();
+                vk.key(now(), code, 1);
+                vk.key(now() + 30, code, 0);
+                queue.roundtrip(&mut state).unwrap();
+                kb.release();
+                println!("pressed evdev key {code}");
+            }
             "type" => {
                 let text = args.get(1).cloned().unwrap_or_else(|| "kiore ok".into());
                 let vkm = state

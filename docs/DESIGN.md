@@ -4,8 +4,9 @@ Share one keyboard and mouse across machines on the same LAN. Move the cursor of
 edge of a screen and it appears on the neighbouring machine; move it back and you're home.
 Clipboard follows you across.
 
-Initial target: **macOS (controller)** → **Omarchy / Hyprland Linux (controlled)**.
-The core is symmetric so the reverse direction can be added later.
+Any computer can be the one you're sitting at (the **controller**) and any can be controlled
+(a **target**): Mac ↔ Linux in either direction, Mac → Mac and Linux → Linux. Windows is
+planned; the platform layer has room for it.
 
 ## Goals
 
@@ -55,9 +56,34 @@ The core is symmetric so the reverse direction can be added later.
 
 ### Roles
 
-Each node can be a **controller** (owns the physical keyboard/mouse, captures input) or a
-**target** (injects input). v1: Mac = controller, Linux = target. The protocol does not assume
-which is which.
+Every node runs both roles when its platform allows: a **controller** (captures its own
+keyboard and mouse and may send them elsewhere) and a **target** (injects input it receives).
+Each starts when its permissions allow (macOS Accessibility, Linux `/dev/uinput` where needed)
+and is re-announced to peers in a fresh `Hello`, so granting a permission takes effect without
+a restart. While a node is being controlled, its own controller is suspended, so an injected
+cursor reaching an edge can't bounce on to a third machine; on macOS, injected events are also
+tagged (`kCGEventSourceUserData`) and ignored by our own tap.
+
+### Platform backends
+
+| | Capture (controller) | Injection (target) | Displays |
+|---|---|---|---|
+| macOS | Quartz event tap over the whole screen | HID-level `CGEventPost` (drags, click counts, modifier flags, pixel scrolling); wakes the display | CoreGraphics |
+| Linux, layer-shell compositors (Hyprland, Sway, KDE…) | 1-px overlay strips on edges that lead somewhere; relative-pointer motion while resting on one; pointer lock + exclusive keyboard + shortcuts inhibitor while remote | `zwlr_virtual_pointer` + `zwp_virtual_keyboard` (no root), else uinput | `xdg-output` |
+| Linux, GNOME | not yet (needs the InputCapture portal + libei) | uinput absolute pointer + keyboard (after `enable-input.sh` grants `/dev/uinput` via udev `uaccess`) | `xdg-output` |
+
+Key codes travel as evdev codes. The receiving side translates for its platform: a Mac
+controlling Linux gets the Command remap (below); Linux controlling a Mac is positional (Super
+is ⌘, Alt is Option, Ctrl is Ctrl), the convention of Synergy, Barrier and Deskflow.
+
+### One arrangement, two computers
+
+Each controller keeps the other's placement in its own layout. Placements are exchanged
+(`Placement { x, y, updated }`) and mirrored: if A puts B's origin at (x, y), B puts A's at
+(−x, −y). The newest placement a person chose wins (`updated` is a Unix-ms timestamp; automatic
+placements are 0); ties go to the smaller device id. A node that keeps its own placement
+replies with it, so a message lost to a race (e.g. during pairing) can't leave the two
+disagreeing. Re-pairing keeps the placement.
 
 ## The key idea: the controller is authoritative
 

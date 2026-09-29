@@ -1,4 +1,4 @@
-# Kiore — Design
+# MouseTail — Design
 
 Share one keyboard and mouse across machines on the same LAN. Move the cursor off the
 edge of a screen and it appears on the neighbouring machine; move it back and you're home.
@@ -31,9 +31,9 @@ planned; the platform layer has room for it.
 
 ```
 ┌──────────────────────── macOS ───────────────────────┐        ┌─────────────── Omarchy ──────────────┐
-│ Kiore.app (SwiftUI menu bar + arrangement window) │        │ kiore (systemd --user service)   │
+│ MouseTail.app (SwiftUI menu bar + arrangement window) │        │ mousetail (systemd --user service)   │
 │        │ local socket (JSON lines)                     │        │   ↑ local socket ← Omarchy bar plugin│
-│ kiore-core (Rust)                                 │  QUIC  │ kiore-core (Rust)                │
+│ mousetail-core (Rust)                                 │  QUIC  │ mousetail-core (Rust)                │
 │  • capture: CGEventTap                                │◄──────►│  • emulate: Wayland virtual pointer  │
 │  • layout + virtual cursor (authoritative)            │ TLS1.3 │    + virtual keyboard (no root)      │
 │  • clipboard: NSPasteboard                            │ pinned │  • clipboard: data-control           │
@@ -42,14 +42,14 @@ planned; the platform layer has room for it.
                                                                   └──────────────────────────────────────┘
 ```
 
-- **`kiore-core`** (Rust library): protocol, pairing, crypto, discovery, layout maths,
+- **`mousetail-core`** (Rust library): protocol, pairing, crypto, discovery, layout maths,
   virtual cursor, key mapping, clipboard sync logic. Platform backends behind traits:
   `InputCapture`, `InputEmulation`, `Clipboard`, `DisplayInfo`.
 - **macOS app** (`apps/macos`): SwiftUI menu bar app and arrangement window. It bundles the
-  Rust daemon (`Contents/MacOS/kiored`), runs it while open, and talks to it over the
+  Rust daemon (`Contents/MacOS/mousetaild`), runs it while open, and talks to it over the
   daemon's local control socket (one JSON request/response per line). No FFI: the same socket
   serves the CLI and the Omarchy bar plugin, so every front end sees the same thing.
-- **Linux daemon** `kiore run`: headless, runs as a systemd user service started with the
+- **Linux daemon** `mousetail run`: headless, runs as a systemd user service started with the
   Hyprland session. No window. Status via an Omarchy shell bar plugin (Omarchy 4 replaced
   Waybar with its Quickshell shell); pairing and events via desktop notifications.
   Feasibility of every piece below is recorded in [`research/RESULTS.md`](research/RESULTS.md).
@@ -90,7 +90,7 @@ disagreeing. Re-pairing keeps the placement.
 The lock-screen trap in Lan Mouse happens because the *remote* decides when the cursor has hit
 the edge to come back; when the lock screen owns input, it never finds out.
 
-In Kiore the **controller decides everything**:
+In MouseTail the **controller decides everything**:
 
 1. While the cursor is on the remote, the Mac keeps its event tap active, hides and pins its own
    cursor, and tracks a **virtual cursor** in the unified layout coordinate space.
@@ -209,7 +209,7 @@ app) and uses the system library on Linux.
 
 ## Discovery and pairing
 
-- Each node advertises `_kiore._tcp` via mDNS with its device id and name.
+- Each node advertises `_mousetail._tcp` via mDNS with its device id and name.
 - Each device has a long-term self-signed certificate (its identity).
 - First connection: the target shows a notification with a 4-digit code; the user enters it in
   the Mac's menu. The code authenticates an exchange of certificate fingerprints (SPAKE2), after
@@ -250,21 +250,21 @@ practice the iMac dials the Mac and the Omarchy install needs no firewall change
 ## Install and running
 
 **macOS**
-- `Kiore.app` into /Applications (DMG or Homebrew cask later). Launch-at-login via
+- `MouseTail.app` into /Applications (DMG or Homebrew cask later). Launch-at-login via
   `SMAppService`. Ad-hoc signed for now; a Developer ID later stops macOS from asking for the
   permissions again after updates.
 
 **Omarchy**
 - `curl -fsSL …/install.sh | sh` (AUR package later). **No sudo:** installs the binary to
-  `~/.local/bin`, enables `kiored.service` (`systemctl --user`, bound to
+  `~/.local/bin`, enables `mousetaild.service` (`systemctl --user`, bound to
   `graphical-session.target`), and installs the bar plugin into `~/.config/omarchy/plugins/`.
-- Starts with the Hyprland session; restarts on failure. `kiore status` CLI for debugging.
+- Starts with the Hyprland session; restarts on failure. `mousetail status` CLI for debugging.
 
 ## Local control socket
 
-`$XDG_RUNTIME_DIR/kiore.sock` (Linux) or `~/Library/Application Support/Kiore/
-kiore.sock` (macOS), mode 0600. Requests: `status`, `layout`, `pair`, `pair_code`,
-`unpair`, `place_at` (drop + snap), `place`, `set_setting`, `release`. `kiore watch`
+`$XDG_RUNTIME_DIR/mousetail.sock` (Linux) or `~/Library/Application Support/MouseTail/
+mousetail.sock` (macOS), mode 0600. Requests: `status`, `layout`, `pair`, `pair_code`,
+`unpair`, `place_at` (drop + snap), `place`, `set_setting`, `release`. `mousetail watch`
 streams status as JSON lines for status bars.
 
 ## Milestones
@@ -298,6 +298,6 @@ Developed and tested on:
 - **Target:** an Intel iMac running Omarchy 4 (Hyprland 0.56, PipeWire 1.6), on Wi-Fi, with
   ufw denying inbound connections, sitting to the left of the Mac.
 - `dev/` holds the tools used for this: `sync.sh` copies the tree to the Linux machine
-  (`KIORE_REMOTE`, an SSH host), `dev.sh` rebuilds and restarts both sides, and `e2e.sh`
+  (`MOUSETAIL_REMOTE`, an SSH host), `dev.sh` rebuilds and restarts both sides, and `e2e.sh`
   drives the Mac with synthetic input and checks the Linux side over SSH.
 - mDNS needs both machines on the same LAN.

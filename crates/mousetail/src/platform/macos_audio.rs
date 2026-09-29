@@ -11,7 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use kiore_core::audio::{AudioPacket, Playout, Receiver};
+use mousetail_core::audio::{AudioPacket, Playout, Receiver};
 use tracing::{debug, info, warn};
 
 /// How long without packets before the output device is released.

@@ -1,7 +1,7 @@
 //! Being controlled on macOS: input from another computer is posted as HID-level Quartz
 //! events, so every app sees it exactly like a real mouse and keyboard.
 //!
-//! Every posted event carries `KIORE_EVENT` in its user-data field. Our own event tap skips
+//! Every posted event carries `MOUSETAIL_EVENT` in its user-data field. Our own event tap skips
 //! those, so input we inject can never be mistaken for the local user pushing at an edge.
 
 use std::collections::HashSet;
@@ -10,12 +10,12 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use kiore_core::keys::{ev, evdev_to_mac};
-use kiore_core::layout::Rect;
-use kiore_core::proto::Scroll;
+use mousetail_core::keys::{ev, evdev_to_mac};
+use mousetail_core::layout::Rect;
+use mousetail_core::proto::Scroll;
 
-/// Marks events Kiore posted (checked by the event tap in `macos.rs`).
-pub const KIORE_EVENT: i64 = 0x4B494F52; // "KIOR"
+/// Marks events MouseTail posted (checked by the event tap in `macos.rs`).
+pub const MOUSETAIL_EVENT: i64 = 0x4D544149; // "MTAI"
 
 #[repr(C)]
 #[derive(Clone, Copy, Default, PartialEq)]
@@ -124,7 +124,7 @@ impl Emulator {
     pub fn start() -> anyhow::Result<Self> {
         anyhow::ensure!(
             unsafe { AXIsProcessTrusted() },
-            "Kiore needs Accessibility permission to be controlled from another computer"
+            "MouseTail needs Accessibility permission to be controlled from another computer"
         );
         let (tx, rx) = mpsc::channel();
         thread::Builder::new()
@@ -209,7 +209,7 @@ impl Injector {
             return;
         }
         unsafe {
-            CGEventSetIntegerValueField(event, EVENT_SOURCE_USER_DATA, KIORE_EVENT);
+            CGEventSetIntegerValueField(event, EVENT_SOURCE_USER_DATA, MOUSETAIL_EVENT);
             CGEventSetFlags(event, modifier_flags(&self.keys));
             CGEventPost(HID_TAP, event);
             CFRelease(event);
@@ -339,7 +339,7 @@ pub fn on_enter() {
     }
     use core_foundation::base::TCFType;
     use core_foundation::string::CFString;
-    let name = CFString::from_static_string("Kiore: another computer is using this Mac");
+    let name = CFString::from_static_string("MouseTail: another computer is using this Mac");
     let mut id = 0u32;
     unsafe {
         IOPMAssertionDeclareUserActivity(name.as_concrete_TypeRef() as *const c_void, 0, &mut id);

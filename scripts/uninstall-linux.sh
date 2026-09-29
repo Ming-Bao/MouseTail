@@ -1,15 +1,15 @@
 #!/bin/bash
-# Remove Kiore from this user account (undoes scripts/install-linux.sh).
+# Remove MouseTail from this user account (undoes scripts/install-linux.sh).
 #   scripts/uninstall-linux.sh [--forget]    --forget also deletes pairings and identity
 set -uo pipefail
 config_home=${XDG_CONFIG_HOME:-$HOME/.config}
-plugin_id=nz.galengreen.kiore
+plugin_id=nz.galengreen.mousetail
 omarchy=$config_home/omarchy
 
-systemctl --user disable --now kiore.service 2>/dev/null
-rm -f "$config_home/systemd/user/kiore.service"
+systemctl --user disable --now mousetail.service 2>/dev/null
+rm -f "$config_home/systemd/user/mousetail.service"
 systemctl --user daemon-reload
-rm -f "$HOME/.local/bin/kiore"
+rm -f "$HOME/.local/bin/mousetail"
 
 if [[ -d $omarchy ]]; then
   rm -rf "$omarchy/plugins/$plugin_id"
@@ -20,5 +20,5 @@ if [[ -d $omarchy ]]; then
   fi
 fi
 
-[[ ${1:-} == --forget ]] && rm -rf "$config_home/kiore"
-echo "Kiore removed."
+[[ ${1:-} == --forget ]] && rm -rf "$config_home/mousetail"
+echo "MouseTail removed."

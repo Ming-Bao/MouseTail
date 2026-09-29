@@ -1,8 +1,8 @@
 //! Display layout on any Wayland compositor, via `xdg-output` (logical positions and sizes,
 //! the same coordinate space the pointer lives in).
 
-use kiore_core::layout::Rect;
-use kiore_core::proto::DisplayInfo;
+use mousetail_core::layout::Rect;
+use mousetail_core::proto::DisplayInfo;
 use wayland_client::protocol::{wl_output, wl_registry};
 use wayland_client::{Connection, Dispatch, QueueHandle, delegate_noop};
 use wayland_protocols::xdg::xdg_output::zv1::client::{

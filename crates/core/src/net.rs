@@ -20,7 +20,7 @@ use rustls::{DigitallySignedStruct, DistinguishedName, SignatureScheme};
 use crate::identity::{Identity, fingerprint};
 use crate::proto::{self, ALPN, MAX_FRAME, Message};
 
-const SERVER_NAME: &str = "kiore";
+const SERVER_NAME: &str = "mousetail";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 /// After the first path connects, how long to wait for a possibly faster one.
 const PATH_GRACE: Duration = Duration::from_millis(150);
@@ -455,7 +455,7 @@ mod tests {
     use super::*;
 
     fn identity(tag: &str) -> Identity {
-        let dir = std::env::temp_dir().join(format!("kiore-net-{tag}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mousetail-net-{tag}-{}", std::process::id()));
         let id = Identity::load_or_create(&dir).unwrap();
         std::fs::remove_dir_all(dir).unwrap();
         id

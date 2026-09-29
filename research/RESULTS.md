@@ -3,12 +3,12 @@
 Feasibility checks run before building. Mac: MacBook Pro M1 Pro, macOS 27.0.
 Target: Omarchy 4.0.0.alpha iMac, Hyprland 0.56.2, kernel 7.2.
 
-Run Linux spikes with `dev/sync.sh && ssh $KIORE_REMOTE '~/Workspace/Kiore/dev/linux-tests.sh all'`.
+Run Linux spikes with `dev/sync.sh && ssh $MOUSETAIL_REMOTE '~/Workspace/MouseTail/dev/linux-tests.sh all'`.
 
 | # | Question | Result |
 |---|----------|--------|
 | 1 | Absolute pointer on Hyprland without root? | **Pass.** `zwlr_virtual_pointer_v1.motion_absolute` lands on the exact pixel (5/5 points incl. corners). Scroll via `axis` accepted. |
-| 2 | Keyboard on Hyprland without root? | **Pass.** `zwp_virtual_keyboard_v1` using the seat's own keymap typed `Kiore ok 123` (with Shift) into a foot window exactly. |
+| 2 | Keyboard on Hyprland without root? | **Pass.** `zwp_virtual_keyboard_v1` using the seat's own keymap typed `MouseTail ok 123` (with Shift) into a foot window exactly. |
 | 3 | Injection cost | 1000 absolute moves in 22 ms (~22 µs each), no socket stalls when flushing per event. Bursts *can* hit `EWOULDBLOCK`; the sender must wait for writability, not panic or drop. |
 | 4 | Clipboard from a windowless daemon | **Pass** both ways via data-control (`wl-clipboard-rs`), cross-checked with `wl-copy`/`wl-paste`. |
 | 5 | Does injected input count as activity for Omarchy idle (screensaver 150 s, lock 300 s)? | **Pass.** A nudge every 30 s kept the screensaver off for 3.5 min; after the last nudge it started exactly 150 s later. Pointer motion does **not** dismiss the screensaver (Omarchy's screensaver only exits on a key press or losing focus — same with a real mouse). |

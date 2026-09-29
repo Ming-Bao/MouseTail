@@ -6,18 +6,18 @@ enum DaemonError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notRunning: return "Kiore isn't running."
+        case .notRunning: return "MouseTail isn't running."
         case .failed(let message): return message
         }
     }
 }
 
-/// Talks to the Kiore daemon over its local socket: one JSON request per line, one JSON
+/// Talks to the MouseTail daemon over its local socket: one JSON request per line, one JSON
 /// reply per line.
 struct DaemonClient {
     static let socketPath: String = {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return support.appendingPathComponent("Kiore/kiore.sock").path
+        return support.appendingPathComponent("MouseTail/mousetail.sock").path
     }()
 
     var path = DaemonClient.socketPath
@@ -70,7 +70,7 @@ struct DaemonClient {
             reply.append(buffer, count: n)
         }
         guard let object = try JSONSerialization.jsonObject(with: reply) as? [String: Any] else {
-            throw DaemonError.failed("Unexpected reply from Kiore.")
+            throw DaemonError.failed("Unexpected reply from MouseTail.")
         }
         if object["ok"] as? Bool != true {
             throw DaemonError.failed(object["error"] as? String ?? "Something went wrong.")
@@ -79,14 +79,14 @@ struct DaemonClient {
     }
 }
 
-/// Runs the bundled daemon (Contents/MacOS/kiored) for as long as the app is open.
+/// Runs the bundled daemon (Contents/MacOS/mousetaild) for as long as the app is open.
 /// If a daemon is already running (e.g. during development) the app just uses that one.
 @MainActor
 final class DaemonProcess {
     private var process: Process?
 
     var bundledDaemon: URL? {
-        let url = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/kiored")
+        let url = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/mousetaild")
         return FileManager.default.isExecutableFile(atPath: url.path) ? url : nil
     }
 
@@ -96,9 +96,9 @@ final class DaemonProcess {
         guard let daemon = bundledDaemon else { return }
 
         let logs = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Logs/Kiore")
+            .appendingPathComponent("Logs/MouseTail")
         try? FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
-        let logURL = logs.appendingPathComponent("kiore.log")
+        let logURL = logs.appendingPathComponent("mousetail.log")
         if !FileManager.default.fileExists(atPath: logURL.path) {
             FileManager.default.createFile(atPath: logURL.path, contents: nil)
         }
@@ -115,7 +115,7 @@ final class DaemonProcess {
             try p.run()
             process = p
         } catch {
-            NSLog("Kiore: couldn't start daemon: \(error)")
+            NSLog("MouseTail: couldn't start daemon: \(error)")
         }
     }
 

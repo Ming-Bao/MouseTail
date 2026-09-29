@@ -17,9 +17,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
-use kiore_core::keys::{CommandRemap, ev};
-use kiore_core::layout::Rect;
-use kiore_core::proto::{DisplayInfo, Scroll};
+use mousetail_core::keys::{CommandRemap, ev};
+use mousetail_core::layout::Rect;
+use mousetail_core::proto::{DisplayInfo, Scroll};
 use serde::Deserialize;
 use wayland_client::protocol::wl_pointer::{Axis, AxisSource, ButtonState};
 use wayland_client::protocol::{wl_keyboard, wl_registry, wl_seat};
@@ -191,7 +191,7 @@ pub fn wake_macs() -> Vec<String> {
 
 pub fn notify(title: &str, body: &str) {
     let _ = Command::new("notify-send")
-        .args(["--app-name=Kiore", title, body])
+        .args(["--app-name=MouseTail", title, body])
         .spawn();
 }
 

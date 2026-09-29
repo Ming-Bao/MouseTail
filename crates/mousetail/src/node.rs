@@ -1,4 +1,4 @@
-//! The Kiore node: one per machine. Discovers peers, keeps a connection to each, pairs,
+//! The MouseTail node: one per machine. Discovers peers, keeps a connection to each, pairs,
 //! and routes input between the local capture/emulation backends and the network.
 //!
 //! Connection direction doesn't matter: both sides dial each other and the first
@@ -12,20 +12,20 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
-use kiore_core::audio::{self, AudioPacket};
-use kiore_core::config::{Config, PeerConfig};
-use kiore_core::controller::{Action, Controller};
-use kiore_core::discovery::{self, Found};
-use kiore_core::identity::{Identity, id_from_fingerprint};
-use kiore_core::keys::CommandRemap;
-use kiore_core::layout::{Point, Rect, Side};
-use kiore_core::net;
-use kiore_core::net::Endpoints;
-use kiore_core::pairing::{self, PakeState, Role};
-use kiore_core::proto::{
+use mousetail_core::audio::{self, AudioPacket};
+use mousetail_core::config::{Config, PeerConfig};
+use mousetail_core::controller::{Action, Controller};
+use mousetail_core::discovery::{self, Found};
+use mousetail_core::identity::{Identity, id_from_fingerprint};
+use mousetail_core::keys::CommandRemap;
+use mousetail_core::layout::{Point, Rect, Side};
+use mousetail_core::net;
+use mousetail_core::net::Endpoints;
+use mousetail_core::pairing::{self, PakeState, Role};
+use mousetail_core::proto::{
     self, Datagram, DisplayInfo, Hello, Message, Motion, PROTOCOL_VERSION, Platform,
 };
-use kiore_core::quinn::{Connection, Endpoint};
+use mousetail_core::quinn::{Connection, Endpoint};
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot, watch};
 use tracing::{debug, info, warn};
@@ -204,7 +204,7 @@ impl Node {
             me: OnceLock::new(),
         });
         info!(
-            "Kiore {} as {name:?} ({id}) on UDP {port}",
+            "MouseTail {} as {name:?} ({id}) on UDP {port}",
             env!("CARGO_PKG_VERSION"),
         );
         let _ = node.me.set(Arc::downgrade(&node));
@@ -1128,7 +1128,7 @@ impl Node {
     }
 
     // -----------------------------------------------------------------------------------------
-    // Pairing (see kiore_core::pairing)
+    // Pairing (see mousetail_core::pairing)
 
     /// The other side asked to pair: show a code here.
     fn pair_show_code(&self, id: &str, peer: &Peer) {
@@ -1146,7 +1146,7 @@ impl Node {
         let code = pairing::new_code();
         info!("pairing requested by {}: code {code}", peer.hello.name);
         platform::notify(
-            "Kiore pairing",
+            "MouseTail pairing",
             &format!("Enter {code} on {} to connect it", peer.hello.name),
         );
         self.pairing.lock().unwrap().insert(
@@ -1281,7 +1281,7 @@ impl Node {
             self.pin(id, peer);
             if shown {
                 self.pair_guard.lock().unwrap().succeeded();
-                platform::notify("Kiore", &format!("Paired with {}", peer.hello.name));
+                platform::notify("MouseTail", &format!("Paired with {}", peer.hello.name));
             }
             self.pair_finish(id, Ok(()));
         } else {
@@ -1421,7 +1421,7 @@ impl Node {
             [id] => Ok((*id).clone()),
             [] => Err(match query {
                 Some(q) => format!("no connected machine matches {q:?}"),
-                None => "no other Kiore machine found on the network yet".into(),
+                None => "no other MouseTail machine found on the network yet".into(),
             }),
             _ => Err("more than one machine matches; name one".into()),
         }
@@ -1506,7 +1506,7 @@ impl Node {
             if all.machine_index(&p.id).is_none()
                 && let Some(offset) = p.placement
             {
-                all.machines.push(kiore_core::layout::Machine {
+                all.machines.push(mousetail_core::layout::Machine {
                     id: p.id.clone(),
                     displays: p.displays.clone(),
                     offset,
@@ -1629,7 +1629,7 @@ trait ButtonOrKey {
 
 impl ButtonOrKey for platform::Emulator {
     fn button_or_key(&self, code: u16, down: bool) {
-        if kiore_core::keys::ev::is_button(code) {
+        if mousetail_core::keys::ev::is_button(code) {
             self.button(code, down);
         } else {
             self.key(code, down);

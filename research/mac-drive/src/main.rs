@@ -1,5 +1,5 @@
 //! Test driver: posts synthetic HID-level input on the Mac, as if from a real mouse and
-//! keyboard, so Kiore can be exercised end to end without anyone at the desk.
+//! keyboard, so MouseTail can be exercised end to end without anyone at the desk.
 //!
 //!   spike-mac-drive where                  print the cursor position
 //!   spike-mac-drive warp <x> <y>           move the cursor to a point

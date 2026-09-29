@@ -12,7 +12,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::Context;
-use kiore_core::audio::{CHANNELS, SAMPLE_RATE};
+use mousetail_core::audio::{CHANNELS, SAMPLE_RATE};
 use pipewire as pw;
 use pw::{properties::properties, spa};
 use spa::pod::Pod;
@@ -28,7 +28,7 @@ impl VirtualSpeaker {
     /// Create the speaker, named `description` (e.g. the Mac's name), and make it the default
     /// output. PCM arrives on the returned channel in whatever chunk sizes PipeWire uses.
     pub fn start(id: &str, description: &str) -> anyhow::Result<(Self, mpsc::Receiver<Vec<i16>>)> {
-        let node_name = format!("kiore.{id}");
+        let node_name = format!("mousetail.{id}");
         let (pcm_tx, pcm_rx) = mpsc::channel();
         let (quit_tx, quit_rx) = pw::channel::channel::<()>();
         let (ready_tx, ready_rx) = mpsc::channel();
@@ -100,7 +100,7 @@ fn run(
         "audio.channels" => "2",
         "audio.position" => "FL,FR",
     };
-    let stream = pw::stream::StreamBox::new(&core, "Kiore", props)?;
+    let stream = pw::stream::StreamBox::new(&core, "MouseTail", props)?;
     let _listener = stream
         .add_local_listener_with_user_data(pcm)
         .process(|stream, pcm| {

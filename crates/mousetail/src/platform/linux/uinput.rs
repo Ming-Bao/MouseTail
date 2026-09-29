@@ -12,8 +12,8 @@ use evdev::uinput::VirtualDevice;
 use evdev::{
     AbsInfo, AbsoluteAxisCode, AttributeSet, InputEvent, KeyCode, RelativeAxisCode, UinputAbsSetup,
 };
-use kiore_core::keys::ev;
-use kiore_core::layout::Rect;
+use mousetail_core::keys::ev;
+use mousetail_core::layout::Rect;
 
 use super::Cmd;
 
@@ -58,7 +58,7 @@ impl Uinput {
             |code| UinputAbsSetup::new(AbsoluteAxisCode(code), AbsInfo::new(0, 0, RANGE, 0, 0, 1));
         let dev = VirtualDevice::builder()
             .context("can't open /dev/uinput (run enable-input.sh once to allow it)")?
-            .name("Kiore virtual input")
+            .name("MouseTail virtual input")
             .with_keys(&keys)?
             .with_relative_axes(&rel)?
             .with_absolute_axis(&abs(ABS_X))?

@@ -885,57 +885,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kiore"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytes",
- "core-foundation",
- "core-graphics",
- "cpal",
- "evdev",
- "hostname",
- "kiore-core",
- "libc",
- "pipewire",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "wayland-client",
- "wayland-protocols",
- "wayland-protocols-misc",
- "wayland-protocols-wlr",
- "wl-clipboard-rs",
-]
-
-[[package]]
-name = "kiore-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytes",
- "hex",
- "hmac",
- "if-addrs",
- "mdns-sd",
- "opusic-sys",
- "postcard",
- "quinn",
- "rand 0.8.8",
- "rcgen",
- "rustls",
- "serde",
- "sha2",
- "spake2",
- "tokio",
- "toml 0.9.12+spec-1.1.0",
- "tracing",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1063,6 +1012,57 @@ dependencies = [
  "log",
  "wasi",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "mousetail"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "core-foundation",
+ "core-graphics",
+ "cpal",
+ "evdev",
+ "hostname",
+ "libc",
+ "mousetail-core",
+ "pipewire",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-protocols-misc",
+ "wayland-protocols-wlr",
+ "wl-clipboard-rs",
+]
+
+[[package]]
+name = "mousetail-core"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "hex",
+ "hmac",
+ "if-addrs",
+ "mdns-sd",
+ "opusic-sys",
+ "postcard",
+ "quinn",
+ "rand 0.8.8",
+ "rcgen",
+ "rustls",
+ "serde",
+ "sha2",
+ "spake2",
+ "tokio",
+ "toml 0.9.12+spec-1.1.0",
+ "tracing",
 ]
 
 [[package]]
@@ -1962,7 +1962,7 @@ dependencies = [
 name = "spike-path-probe"
 version = "0.0.0"
 dependencies = [
- "kiore-core",
+ "mousetail-core",
  "tokio",
 ]
 

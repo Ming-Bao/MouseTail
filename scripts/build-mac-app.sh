@@ -1,6 +1,6 @@
 #!/bin/bash
-# Build Kiore.app: the SwiftUI menu bar app with the Rust daemon inside it.
-#   scripts/build-mac-app.sh [debug|release|universal]   → dist/Kiore.app
+# Build MouseTail.app: the SwiftUI menu bar app with the Rust daemon inside it.
+#   scripts/build-mac-app.sh [debug|release|universal]   → dist/MouseTail.app
 # `universal` runs natively on Apple Silicon and Intel (what releases ship).
 # Signs with the first Apple Development / Developer ID identity found (ad-hoc otherwise).
 set -euo pipefail
@@ -14,33 +14,33 @@ if [[ $profile == universal ]]; then
   for t in aarch64-apple-darwin x86_64-apple-darwin; do
     rustup target add "$t" >/dev/null 2>&1 || true
     CARGO_TARGET_DIR="target/mac-$t" \
-      cargo build --release --locked -p kiore --target "$t"
+      cargo build --release --locked -p mousetail --target "$t"
   done
   mkdir -p target/universal
-  lipo -create -output target/universal/kiore \
-    target/mac-aarch64-apple-darwin/aarch64-apple-darwin/release/kiore \
-    target/mac-x86_64-apple-darwin/x86_64-apple-darwin/release/kiore
+  lipo -create -output target/universal/mousetail \
+    target/mac-aarch64-apple-darwin/aarch64-apple-darwin/release/mousetail \
+    target/mac-x86_64-apple-darwin/x86_64-apple-darwin/release/mousetail
   (cd apps/macos && swift build -c release --arch arm64 --arch x86_64)
-  daemon=target/universal/kiore
-  ui=$(cd apps/macos && swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/Kiore
+  daemon=target/universal/mousetail
+  ui=$(cd apps/macos && swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/MouseTail
 elif [[ $profile == release ]]; then
-  cargo build --release -p kiore
+  cargo build --release -p mousetail
   (cd apps/macos && swift build -c release)
-  daemon=target/release/kiore
-  ui=apps/macos/.build/release/Kiore
+  daemon=target/release/mousetail
+  ui=apps/macos/.build/release/MouseTail
 else
-  cargo build -p kiore
+  cargo build -p mousetail
   (cd apps/macos && swift build)
-  daemon=target/debug/kiore
-  ui=apps/macos/.build/debug/Kiore
+  daemon=target/debug/mousetail
+  ui=apps/macos/.build/debug/MouseTail
 fi
 
-app=dist/Kiore.app
+app=dist/MouseTail.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp "$ui" "$app/Contents/MacOS/Kiore"
-# Lower-case "kiore" would clash with "Kiore" on a case-insensitive disk.
-cp "$daemon" "$app/Contents/MacOS/kiored"
+cp "$ui" "$app/Contents/MacOS/MouseTail"
+# Lower-case "mousetail" would clash with "MouseTail" on a case-insensitive disk.
+cp "$daemon" "$app/Contents/MacOS/mousetaild"
 cp apps/macos/Resources/AppIcon.icns apps/macos/Resources/MenuBarIcon*.png "$app/Contents/Resources/"
 
 cat > "$app/Contents/Info.plist" <<PLIST
@@ -48,10 +48,10 @@ cat > "$app/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Kiore</string>
-  <key>CFBundleDisplayName</key><string>Kiore</string>
-  <key>CFBundleIdentifier</key><string>nz.galengreen.Kiore</string>
-  <key>CFBundleExecutable</key><string>Kiore</string>
+  <key>CFBundleName</key><string>MouseTail</string>
+  <key>CFBundleDisplayName</key><string>MouseTail</string>
+  <key>CFBundleIdentifier</key><string>nz.galengreen.MouseTail</string>
+  <key>CFBundleExecutable</key><string>MouseTail</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
@@ -60,15 +60,15 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>LSUIElement</key><true/>
   <key>NSHumanReadableCopyright</key><string>© Galen Green</string>
   <key>NSLocalNetworkUsageDescription</key>
-  <string>Kiore finds and connects to your other computers on the local network.</string>
+  <string>MouseTail finds and connects to your other computers on the local network.</string>
   <key>NSBonjourServices</key>
-  <array><string>_kiore._udp</string></array>
+  <array><string>_mousetail._udp</string></array>
 </dict>
 </plist>
 PLIST
 
 ident=$(security find-identity -v -p codesigning | awk '/Developer ID Application|Apple Development/ {print $2; exit}')
 ident=${ident:--}
-codesign --force --sign "$ident" --identifier nz.galengreen.Kiore.daemon "$app/Contents/MacOS/kiored"
+codesign --force --sign "$ident" --identifier nz.galengreen.MouseTail.daemon "$app/Contents/MacOS/mousetaild"
 codesign --force --sign "$ident" "$app"
 echo "built $app ($profile, signed with ${ident:0:8}…)"

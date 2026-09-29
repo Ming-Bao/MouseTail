@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draws the website's night-hills artwork (paper-cut layers, stars, moon, a kiore on the ridge).
+"""Draws the website's night-hills artwork (paper-cut layers, stars, moon).
 
     python3 scripts/make-night.py   → website/art/night.svg
 """
@@ -34,33 +34,32 @@ def ridge(base, amp, waves, phase, points=48):
 
 layers = [
     # base, amplitude, waves (weight, frequency), phase, top colour, bottom colour
-    (650, 80, [(1, 1.2), (0.35, 2.9)], 0.4, "#4a5472", "#363e58"),
-    (715, 90, [(1, 1.55), (0.3, 3.6)], 2.2, "#3c4461", "#2b3249"),
-    (785, 82, [(1, 1.05), (0.4, 2.4)], 4.0, "#303752", "#222840"),
-    (855, 72, [(1, 1.8), (0.3, 4.1)], 1.1, "#252b41", "#191e2e"),
-    (925, 60, [(1, 1.35), (0.35, 3.3)], 5.2, "#1b2031", "#121623"),
-    (990, 45, [(1, 1.7), (0.3, 3.9)], 2.9, "#121622", "#0a0d15"),
+    (650, 80, [(1, 1.2), (0.35, 2.9)], 0.4, "#494945", "#373734"),
+    (715, 90, [(1, 1.55), (0.3, 3.6)], 2.2, "#3b3b38", "#2c2c2a"),
+    (785, 82, [(1, 1.05), (0.4, 2.4)], 4.0, "#302f2d", "#232322"),
+    (855, 72, [(1, 1.8), (0.3, 4.1)], 1.1, "#252524", "#1a1a19"),
+    (925, 60, [(1, 1.35), (0.35, 3.3)], 5.2, "#1b1b1a", "#121212"),
+    (990, 45, [(1, 1.7), (0.3, 3.9)], 2.9, "#121212", "#0a0a0a"),
 ]
-KIORE_LAYER = 3
 
 out = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMax slice">']
 out.append("""<defs>
   <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0" stop-color="#11141f"/>
-    <stop offset="0.55" stop-color="#232a40"/>
-    <stop offset="1" stop-color="#3d4663"/>
+    <stop offset="0" stop-color="#0f1010"/>
+    <stop offset="0.55" stop-color="#1e1f1f"/>
+    <stop offset="1" stop-color="#34342f"/>
   </linearGradient>
   <radialGradient id="moonglow" cx="0.74" cy="0.23" r="0.36">
-    <stop offset="0" stop-color="#dfe5fa" stop-opacity="0.34"/>
-    <stop offset="0.4" stop-color="#aeb9df" stop-opacity="0.10"/>
-    <stop offset="1" stop-color="#aeb9df" stop-opacity="0"/>
+    <stop offset="0" stop-color="#ffeba7" stop-opacity="0.30"/>
+    <stop offset="0.4" stop-color="#e8c96e" stop-opacity="0.09"/>
+    <stop offset="1" stop-color="#e8c96e" stop-opacity="0"/>
   </radialGradient>
   <radialGradient id="halo">
-    <stop offset="0.25" stop-color="#e6ebfb" stop-opacity="0.22"/>
-    <stop offset="1" stop-color="#e6ebfb" stop-opacity="0"/>
+    <stop offset="0.25" stop-color="#ffeba7" stop-opacity="0.26"/>
+    <stop offset="1" stop-color="#ffeba7" stop-opacity="0"/>
   </radialGradient>
   <filter id="paper" x="-5%" y="-20%" width="110%" height="140%">
-    <feDropShadow dx="0" dy="-7" stdDeviation="14" flood-color="#04060b" flood-opacity="0.7"/>
+    <feDropShadow dx="0" dy="-7" stdDeviation="14" flood-color="#050505" flood-opacity="0.7"/>
   </filter>
   <filter id="grain">
     <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/>
@@ -77,14 +76,14 @@ for _ in range(170):
     r = rng.choice([0.7, 0.8, 1.0, 1.2, 1.5, 1.9])
     o = max(0.15, min(0.9, rng.uniform(0.2, 0.9) * (1 - y / 800)))
     stars.append(f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{r}" opacity="{o:.2f}"/>')
-out.append('<g fill="#eef1fb">' + "".join(stars) + "</g>")
+out.append('<g fill="#fff6e0">' + "".join(stars) + "</g>")
 
 # Moon.
 # Moon: small and soft, with a halo.
 out.append('<circle cx="1184" cy="230" r="95" fill="url(#halo)"/>')
-out.append('<circle cx="1184" cy="230" r="26" fill="#eef1fa"/>')
-out.append('<circle cx="1177" cy="224" r="5" fill="#cfd6ec" opacity="0.6"/>')
-out.append('<circle cx="1192" cy="238" r="3.5" fill="#cfd6ec" opacity="0.5"/>')
+out.append('<circle cx="1184" cy="230" r="26" fill="#fff4d2"/>')
+out.append('<circle cx="1177" cy="224" r="5" fill="#e9d9a8" opacity="0.6"/>')
+out.append('<circle cx="1192" cy="238" r="3.5" fill="#e9d9a8" opacity="0.5"/>')
 
 for i, (base, amp, waves, phase, top, bottom) in enumerate(layers):
     d, pts = ridge(base, amp, waves, phase)
@@ -96,24 +95,11 @@ for i, (base, amp, waves, phase, top, bottom) in enumerate(layers):
     # A faint moonlit edge along the top of each layer.
     edge = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in pts)
     out.append(
-        f'<path d="{edge}" fill="none" stroke="#c7d0ee" stroke-opacity="{0.14 - i * 0.018:.3f}" stroke-width="1.5"/>'
+        f'<path d="{edge}" fill="none" stroke="#f0e2bd" stroke-opacity="{0.14 - i * 0.018:.3f}" stroke-width="1.5"/>'
     )
-    if i == KIORE_LAYER:
-        # A little kiore on the crest, facing the moon.
-        right = [p for p in pts if 900 < p[0] < 1400]
-        x0, y0 = min(right, key=lambda p: p[1])
-        out.append(
-            f'<g transform="translate({x0:.0f} {y0 + 2:.0f}) scale(1.35)" fill="#141926">'
-            '<ellipse cx="0" cy="-11" rx="17" ry="12"/>'
-            '<circle cx="15" cy="-21" r="8.5"/>'
-            '<circle cx="11" cy="-31" r="5.5"/>'
-            '<path d="M -15 -6 C -32 -4 -36 -18 -46 -12" fill="none" stroke="#141926" '
-            'stroke-width="2.4" stroke-linecap="round"/>'
-            "</g>"
-        )
     # Mist in front of the farther layers.
     if i < len(layers) - 1:
-        out.append(f'<rect x="0" y="{base - 60}" width="{W}" height="200" fill="#8e99bf" opacity="0.03"/>')
+        out.append(f'<rect x="0" y="{base - 60}" width="{W}" height="200" fill="#a9a597" opacity="0.03"/>')
 
 out.append(f'<rect width="{W}" height="{H}" filter="url(#grain)" opacity="0.07"/>')
 out.append("</svg>")

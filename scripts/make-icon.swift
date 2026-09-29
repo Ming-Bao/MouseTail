@@ -1,16 +1,18 @@
-// Renders the logo artwork in assets/ into the app's icon and menu bar images.
+// Renders the artwork in assets/ into the app's icon, menu bar images and web images.
 //   swift scripts/make-icon.swift
 import AppKit
 
-func render(_ svg: String, _ px: Int) -> Data {
-    guard let image = NSImage(contentsOf: URL(fileURLWithPath: svg)) else { fatalError("can't read \(svg)") }
+/// Draws the image into a px × px canvas, inset by `inset` (a fraction of px) on every side.
+func render(_ file: String, _ px: Int, inset: Double = 0) -> Data {
+    guard let image = NSImage(contentsOf: URL(fileURLWithPath: file)) else { fatalError("can't read \(file)") }
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px, bitsPerSample: 8,
                                samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
     NSGraphicsContext.current?.imageInterpolation = .high
-    image.draw(in: NSRect(x: 0, y: 0, width: px, height: px))
+    let margin = Double(px) * inset
+    image.draw(in: NSRect(x: margin, y: margin, width: Double(px) - 2 * margin, height: Double(px) - 2 * margin))
     NSGraphicsContext.restoreGraphicsState()
     return rep.representation(using: .png, properties: [:])!
 }
@@ -18,13 +20,13 @@ func render(_ svg: String, _ px: Int) -> Data {
 let resources = URL(fileURLWithPath: "apps/macos/Resources")
 try! FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
 
-// App icon.
+// App icon. The logo fills its canvas; macOS icons sit on an 824-in-1024 grid.
 let iconset = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("AppIcon.iconset")
 try? FileManager.default.removeItem(at: iconset)
 try! FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
 for size in [16, 32, 128, 256, 512] {
-    try! render("assets/logo.svg", size).write(to: iconset.appendingPathComponent("icon_\(size)x\(size).png"))
-    try! render("assets/logo.svg", size * 2).write(to: iconset.appendingPathComponent("icon_\(size)x\(size)@2x.png"))
+    try! render("assets/logo.png", size, inset: 100 / 1024).write(to: iconset.appendingPathComponent("icon_\(size)x\(size).png"))
+    try! render("assets/logo.png", size * 2, inset: 100 / 1024).write(to: iconset.appendingPathComponent("icon_\(size)x\(size)@2x.png"))
 }
 let task = Process()
 task.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
@@ -39,5 +41,7 @@ for (svg, name) in [("assets/menubar.svg", "MenuBarIcon"), ("assets/menubar-acti
 }
 
 // Web and README artwork.
-try! render("assets/logo.svg", 512).write(to: URL(fileURLWithPath: "assets/logo-512.png"))
+try! render("assets/logo.png", 512).write(to: URL(fileURLWithPath: "assets/logo-512.png"))
+try! render("assets/logo.png", 256).write(to: URL(fileURLWithPath: "website/logo.png"))
+try! render("assets/logo.png", 64).write(to: URL(fileURLWithPath: "website/favicon.png"))
 print("wrote icons")

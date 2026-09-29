@@ -1,4 +1,4 @@
-//! Platform-independent core of Kiore.
+//! Platform-independent core of MouseTail.
 
 pub mod audio;
 pub mod config;

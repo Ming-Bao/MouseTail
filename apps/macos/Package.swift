@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "Kiore",
+    name: "MouseTail",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "Kiore",
-            path: "Sources/Kiore"
+            name: "MouseTail",
+            path: "Sources/MouseTail"
         )
     ],
     swiftLanguageModes: [.v5]

@@ -269,7 +269,10 @@ mod linux {
                 println!("pressed evdev key {code}");
             }
             "type" => {
-                let text = args.get(1).cloned().unwrap_or_else(|| "kiore ok".into());
+                let text = args
+                    .get(1)
+                    .cloned()
+                    .unwrap_or_else(|| "mousetail ok".into());
                 let vkm = state
                     .vkm
                     .clone()

@@ -13,7 +13,7 @@ use spake2::{Ed25519Group, Identity, Password, Spake2};
 /// In-progress SPAKE2 exchange.
 pub type PakeState = Spake2<Ed25519Group>;
 
-const LABEL: &[u8] = b"kiore-pair-v1";
+const LABEL: &[u8] = b"mousetail-pair-v1";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {

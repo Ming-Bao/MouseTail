@@ -28,11 +28,11 @@ case ${1:-all} in
   clipboard) $bin/spike-linux-clipboard ;;
   keyboard)
     if focus_test_window; then
-      $bin/spike-linux-inject type "Kiore ok 123"
+      $bin/spike-linux-inject type "MouseTail ok 123"
       sleep 0.5
       got=$(cat /tmp/bm-kbd 2>/dev/null)
       echo "received: '$got'"
-      [[ $got == "Kiore ok 123" ]] && echo "keyboard: PASS" || echo "keyboard: FAIL"
+      [[ $got == "MouseTail ok 123" ]] && echo "keyboard: PASS" || echo "keyboard: FAIL"
     else
       echo "keyboard: SKIPPED (test window never focused)"
     fi

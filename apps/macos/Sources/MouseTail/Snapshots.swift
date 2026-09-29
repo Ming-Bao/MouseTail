@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// `Kiore --render <dir>` draws the menu and arrangement views, filled with live data from
+/// `MouseTail --render <dir>` draws the menu and arrangement views, filled with live data from
 /// the running daemon, to PNG files. For checking the UI without clicking through it.
 @MainActor
 enum Snapshots {

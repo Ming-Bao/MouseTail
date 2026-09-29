@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @main
-struct KioreApp: App {
+struct MouseTailApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = AppModel.shared
 
@@ -23,7 +23,7 @@ struct KioreApp: App {
     }
 }
 
-/// The little Kiore head: outlined normally, filled while the cursor is on another computer.
+/// The little mouse head: outlined normally, filled while the cursor is on another computer.
 struct MenuBarIcon: View {
     let active: Bool
 

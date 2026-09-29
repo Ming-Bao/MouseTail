@@ -1,6 +1,6 @@
 [package]
-name = "kiore-core"
-description = "Platform-independent core of Kiore: layout, cursor, keys, protocol, pairing, networking."
+name = "mousetail-core"
+description = "Platform-independent core of MouseTail: layout, cursor, keys, protocol, pairing, networking."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

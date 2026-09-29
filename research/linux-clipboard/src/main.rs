@@ -32,7 +32,7 @@ fn main() {
 
     let previous = wl_paste();
 
-    let token = format!("kiore-{}", std::process::id());
+    let token = format!("mousetail-{}", std::process::id());
     let mut opts = copy::Options::new();
     opts.foreground(false);
     opts.copy(

@@ -1,6 +1,6 @@
 //! Spike: mDNS discovery across the LAN plus TCP round-trip latency.
 //!
-//!   spike-discovery advertise     register _kiore._tcp and run a TCP echo server
+//!   spike-discovery advertise     register _mousetail._tcp and run a TCP echo server
 //!   spike-discovery browse        find peers, then measure 1000 16-byte round trips
 
 use std::io::{Read, Write};
@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 
-const SERVICE: &str = "_kiore._tcp.local.";
+const SERVICE: &str = "_mousetail._tcp.local.";
 
 fn main() {
     let mode = std::env::args().nth(1).unwrap_or_default();

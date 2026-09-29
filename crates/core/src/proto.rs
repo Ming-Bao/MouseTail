@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::layout::Rect;
 
 pub const PROTOCOL_VERSION: u32 = 4;
-pub const ALPN: &[u8] = b"kiore/1";
+pub const ALPN: &[u8] = b"mousetail/1";
 /// Largest control frame accepted (clipboard payloads included).
 pub const MAX_FRAME: usize = 16 * 1024 * 1024;
 

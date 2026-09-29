@@ -17,10 +17,10 @@ use core_foundation::dictionary::CFDictionary;
 use core_foundation::runloop::{CFRunLoop, kCFRunLoopCommonModes};
 use core_foundation::string::CFString;
 use core_graphics::display::CGDisplay;
-use kiore_core::controller::{Action, Controller, Input};
-use kiore_core::keys::{ev, mac_to_evdev};
-use kiore_core::layout::{Point, Rect};
-use kiore_core::proto::{DisplayInfo, Scroll};
+use mousetail_core::controller::{Action, Controller, Input};
+use mousetail_core::keys::{ev, mac_to_evdev};
+use mousetail_core::layout::{Point, Rect};
+use mousetail_core::proto::{DisplayInfo, Scroll};
 use tokio::sync::mpsc::UnboundedSender;
 
 // ---------------------------------------------------------------------------------------------
@@ -200,7 +200,7 @@ fn ensure_permissions(prompt: bool) -> anyhow::Result<()> {
         unsafe { CGPreflightListenEventAccess() || (prompt && CGRequestListenEventAccess()) };
     anyhow::ensure!(
         accessibility && monitoring,
-        "Kiore needs Accessibility and Input Monitoring permission \
+        "MouseTail needs Accessibility and Input Monitoring permission \
          (System Settings → Privacy & Security), then restart it"
     );
     Ok(())
@@ -274,7 +274,7 @@ extern "C" fn tap_callback(
     // Input we injected ourselves (another computer controlling this Mac) isn't the local
     // user: never let it cross edges or be forwarded.
     if unsafe { CGEventGetIntegerValueField(event, EVENT_SOURCE_USER_DATA) }
-        == super::macos_emulate::KIORE_EVENT
+        == super::macos_emulate::MOUSETAIL_EVENT
     {
         return event;
     }

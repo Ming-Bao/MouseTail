@@ -22,7 +22,7 @@ impl Identity {
         if !cert_path.exists() || !key_path.exists() {
             fs::create_dir_all(dir)?;
             let key = rcgen::KeyPair::generate()?;
-            let params = rcgen::CertificateParams::new(vec!["kiore".to_string()])?;
+            let params = rcgen::CertificateParams::new(vec!["mousetail".to_string()])?;
             let cert = params.self_signed(&key)?;
             write_private(&key_path, key.serialize_pem().as_bytes())?;
             fs::write(&cert_path, cert.pem())?;
@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn creates_then_reloads_same_identity() {
-        let dir = std::env::temp_dir().join(format!("kiore-id-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("mousetail-id-{}", std::process::id()));
         let a = Identity::load_or_create(&dir).unwrap();
         let b = Identity::load_or_create(&dir).unwrap();
         assert_eq!(a.fingerprint, b.fingerprint);

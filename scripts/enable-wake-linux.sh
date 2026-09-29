@@ -1,5 +1,5 @@
 #!/bin/bash
-# Let this Linux machine be woken from sleep by Kiore (Wake-on-LAN), so pushing the
+# Let this Linux machine be woken from sleep by MouseTail (Wake-on-LAN), so pushing the
 # cursor towards it wakes it. Needs your password once; the setting sticks across reboots.
 #   scripts/enable-wake-linux.sh
 set -euo pipefail

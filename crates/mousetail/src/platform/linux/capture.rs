@@ -14,10 +14,10 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 
 use anyhow::Context;
-use kiore_core::controller::{Action, Controller, Input};
-use kiore_core::keys::ev;
-use kiore_core::layout::{Point, Side};
-use kiore_core::proto::Scroll;
+use mousetail_core::controller::{Action, Controller, Input};
+use mousetail_core::keys::ev;
+use mousetail_core::layout::{Point, Side};
+use mousetail_core::proto::Scroll;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, warn};
 use wayland_client::protocol::wl_pointer::{self, ButtonState};
@@ -339,7 +339,7 @@ impl Grabber {
                 &surface,
                 Some(&wl),
                 Layer::Overlay,
-                "kiore-edge".into(),
+                "mousetail-edge".into(),
                 &self.qh,
                 index,
             );
@@ -384,7 +384,7 @@ impl Grabber {
     /// A transparent buffer for a strip (layer surfaces need content to be shown).
     fn transparent_buffer(&self, w: i32, h: i32) -> Option<wl_buffer::WlBuffer> {
         let size = (w.max(1) * h.max(1) * 4) as usize;
-        let fd = unsafe { libc::memfd_create(c"kiore-edge".as_ptr(), libc::MFD_CLOEXEC) };
+        let fd = unsafe { libc::memfd_create(c"mousetail-edge".as_ptr(), libc::MFD_CLOEXEC) };
         if fd < 0 {
             return None;
         }

@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 
 use crate::proto::PROTOCOL_VERSION;
 
-pub const SERVICE_TYPE: &str = "_kiore._udp.local.";
+pub const SERVICE_TYPE: &str = "_mousetail._udp.local.";
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Found {
@@ -112,7 +112,7 @@ fn sanitise(name: &str) -> String {
         .collect();
     let s = s.trim_matches('-');
     if s.is_empty() {
-        "kiore".into()
+        "mousetail".into()
     } else {
         s.into()
     }
@@ -125,7 +125,7 @@ mod tests {
     #[test]
     fn sanitises_names() {
         assert_eq!(sanitise("Jo's MacBook Pro"), "Jo-s-MacBook-Pro");
-        assert_eq!(sanitise("…"), "kiore");
+        assert_eq!(sanitise("…"), "mousetail");
     }
 
     #[test]

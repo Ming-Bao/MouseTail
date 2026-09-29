@@ -65,7 +65,7 @@ mod mac {
                 "key {} vk=0x{vk:02x} {}",
                 if etype == 10 { "down" } else { "up" },
                 if tag == 0x4B494F52 {
-                    "(posted by Kiore)"
+                    "(posted by MouseTail)"
                 } else {
                     ""
                 }

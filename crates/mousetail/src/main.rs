@@ -1,4 +1,4 @@
-//! Kiore: share one keyboard, mouse and clipboard between machines on the LAN.
+//! MouseTail: share one keyboard, mouse and clipboard between machines on the LAN.
 
 mod ipc;
 mod node;
@@ -9,29 +9,29 @@ use std::io::Write;
 
 use anyhow::Context;
 use ipc::Request;
-use kiore_core::layout::Side;
+use mousetail_core::layout::Side;
 use paths::Paths;
 use serde_json::Value;
 
 const USAGE: &str = "\
-Kiore — share one keyboard and mouse between machines on your network.
+MouseTail — share one keyboard and mouse between machines on your network.
 
 Usage:
-  kiore run                         Run Kiore (normally started for you)
-  kiore status                      Show this machine and the ones it can see
-  kiore pair [machine]              Pair with a machine (it shows a code to type here)
-  kiore unpair <machine>            Forget a paired machine
-  kiore place <machine> <side> [n]  Put a machine left/right/above/below display n
+  mousetail run                         Run MouseTail (normally started for you)
+  mousetail status                      Show this machine and the ones it can see
+  mousetail pair [machine]              Pair with a machine (it shows a code to type here)
+  mousetail unpair <machine>            Forget a paired machine
+  mousetail place <machine> <side> [n]  Put a machine left/right/above/below display n
                                         (default: the main display)
-  kiore release                     Bring the cursor back to this machine
-  kiore set <clipboard|audio> <on|off>  Change a setting
-  kiore watch                       Print status as JSON, one line per change
+  mousetail release                     Bring the cursor back to this machine
+  mousetail set <clipboard|audio> <on|off>  Change a setting
+  mousetail watch                       Print status as JSON, one line per change
 ";
 
 #[tokio::main]
 async fn main() {
     if let Err(e) = run().await {
-        eprintln!("kiore: {e:#}");
+        eprintln!("mousetail: {e:#}");
         std::process::exit(1);
     }
 }
@@ -53,7 +53,7 @@ async fn run() -> anyhow::Result<()> {
         }
         "status" => {
             let v = ipc::call(&paths.socket, &Request::Status).await?;
-            // Ignore a closed pipe (e.g. `kiore status | head`).
+            // Ignore a closed pipe (e.g. `mousetail status | head`).
             let _ = std::io::stdout().write_all(status_text(&v).as_bytes());
             Ok(())
         }
@@ -212,7 +212,7 @@ fn status_text(v: &Value) -> String {
         let state = match (p["paired"] == true, p["connected"] == true) {
             (true, true) => "paired, connected",
             (true, false) => "paired, not connected",
-            (false, true) => "not paired — run `kiore pair`",
+            (false, true) => "not paired — run `mousetail pair`",
             (false, false) => "seen",
         };
         let rtt = p["rtt_ms"]

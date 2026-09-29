@@ -5,5 +5,5 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-kiore-core = { path = "../../crates/core" }
+mousetail-core = { path = "../../crates/core" }
 tokio = { workspace = true }

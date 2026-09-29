@@ -2,13 +2,13 @@
 # End-to-end checks with both daemons running (dev/dev.sh start) and the machines paired.
 # Drives the Mac with synthetic HID events and checks the iMac over SSH.
 # The Linux machine to test against (an SSH host name or alias).
-REMOTE=${KIORE_REMOTE:-omarchy}
+REMOTE=${MOUSETAIL_REMOTE:-omarchy}
 set -u
 cd "$(dirname "$0")/.."
 drive=./target/debug/spike-mac-drive
-imac() { ssh "$REMOTE" ". ~/Workspace/Kiore/dev/remote-env.sh; $*"; }
+imac() { ssh "$REMOTE" ". ~/Workspace/MouseTail/dev/remote-env.sh; $*"; }
 pos() { imac hyprctl cursorpos; }
-state() { ./target/debug/kiore status | grep -E "cursor is on" || echo "  cursor is home"; }
+state() { ./target/debug/mousetail status | grep -E "cursor is on" || echo "  cursor is home"; }
 pass=0; fail=0
 check() { if [[ $2 == "$3" ]]; then echo "  ok   $1 ($2)"; pass=$((pass+1)); else echo "  FAIL $1: got '$2', want '$3'"; fail=$((fail+1)); fi; }
 
@@ -34,7 +34,7 @@ case ${1:-motion} in
   keyboard)
     echo "== typing from the Mac lands in an iMac window"
     open_sink() {
-      imac "rm -f $2; hyprctl dispatch 'hl.dsp.exec_cmd([[foot --app-id=bm-test \$HOME/Workspace/Kiore/dev/$1]])' >/dev/null"
+      imac "rm -f $2; hyprctl dispatch 'hl.dsp.exec_cmd([[foot --app-id=bm-test \$HOME/Workspace/MouseTail/dev/$1]])' >/dev/null"
       for _ in $(seq 1 20); do sleep 0.25; imac "hyprctl activewindow -j | jq -e '.class == \"bm-test\"' >/dev/null" && return 0; done
       return 1
     }
@@ -76,9 +76,9 @@ case ${1:-motion} in
     echo "== a frozen iMac can't trap the cursor"
     $drive warp 5 500; sleep 0.2; $drive push -10 0 2; sleep 0.3
     check "on the iMac" "$(state | xargs)" "cursor is on 5b9095fb21130aba"
-    imac "pkill -STOP -x kiore"
+    imac "pkill -STOP -x mousetail"
     start=$(perl -MTime::HiRes=time -e 'printf "%.0f", time*1000')
-    while ./target/debug/kiore status | grep -q "cursor is on"; do
+    while ./target/debug/mousetail status | grep -q "cursor is on"; do
       sleep 0.1
       (( $(perl -MTime::HiRes=time -e 'printf "%.0f", time*1000') - start > 10000 )) && break
     done
@@ -86,10 +86,10 @@ case ${1:-motion} in
     echo "  (came home after ${took} ms)"
     check "home within 3 s of the iMac freezing" "$(( took <= 3000 ))" "1"
     check "Mac cursor back where it left" "$($drive where)" "0, 500"
-    imac "pkill -CONT -x kiore"
+    imac "pkill -CONT -x mousetail"
     echo "== reconnects by itself"
-    for _ in $(seq 1 40); do sleep 0.5; ./target/debug/kiore status | grep -q "paired, connected" && break; done
-    check "reconnected" "$(./target/debug/kiore status | grep -c 'paired, connected')" "1"
+    for _ in $(seq 1 40); do sleep 0.5; ./target/debug/mousetail status | grep -q "paired, connected" && break; done
+    check "reconnected" "$(./target/debug/mousetail status | grep -c 'paired, connected')" "1"
     ;;
 esac
 echo "passed $pass, failed $fail"

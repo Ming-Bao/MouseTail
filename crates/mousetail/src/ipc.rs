@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context;
-use kiore_core::layout::Side;
+use mousetail_core::layout::Side;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -109,7 +109,7 @@ async fn handle(node: &Node, req: Request) -> Value {
             .map(|offset| json!({"offset": offset})),
         Request::Layout => Ok(node.layout()),
         Request::PlaceAt { peer, x, y } => node
-            .place_at(&peer, kiore_core::layout::Point::new(x, y))
+            .place_at(&peer, mousetail_core::layout::Point::new(x, y))
             .map(|offset| json!({"offset": offset})),
         Request::SetSetting { key, value } => {
             node.set_setting(&key, &value).map(|()| node.settings())
@@ -132,7 +132,7 @@ async fn handle(node: &Node, req: Request) -> Value {
 pub async fn call(path: &Path, req: &Request) -> anyhow::Result<Value> {
     let stream = UnixStream::connect(path)
         .await
-        .context("Kiore isn't running (start it with `kiore run`)")?;
+        .context("MouseTail isn't running (start it with `mousetail run`)")?;
     let (read, mut write) = stream.into_split();
     let mut line = serde_json::to_string(req)?;
     line.push('\n');

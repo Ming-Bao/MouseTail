@@ -53,7 +53,7 @@ struct MenuContent: View {
                     .foregroundStyle(.secondary)
             }
             Divider()
-            Button("Quit Kiore") { NSApp.terminate(nil) }
+            Button("Quit MouseTail") { NSApp.terminate(nil) }
                 .buttonStyle(.plain)
                 .keyboardShortcut("q")
         }
@@ -70,7 +70,7 @@ struct MenuContent: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text("Kiore").font(.headline)
+            Text("MouseTail").font(.headline)
             Spacer()
             Text(summary).font(.caption).foregroundStyle(.secondary)
         }
@@ -203,9 +203,9 @@ struct PermissionNotice: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label("Allow Kiore to use your keyboard and mouse", systemImage: "hand.raised.fill")
+            Label("Allow MouseTail to use your keyboard and mouse", systemImage: "hand.raised.fill")
                 .font(.callout.weight(.semibold))
-            Text("Turn on Kiore in Accessibility and Input Monitoring. It starts working as soon as you do.")
+            Text("Turn on MouseTail in Accessibility and Input Monitoring. It starts working as soon as you do.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             HStack {

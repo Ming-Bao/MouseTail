@@ -14,7 +14,7 @@ use std::collections::HashSet;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Edge {
     pub display: String,
-    pub side: kiore_core::layout::Side,
+    pub side: mousetail_core::layout::Side,
 }
 
 #[cfg(target_os = "macos")]
@@ -57,7 +57,7 @@ pub use stubs::Emulator;
 /// Keys that Command should turn into Super on this machine (see `keys::CommandRemap`).
 #[cfg(not(target_os = "linux"))]
 pub fn command_super_keys() -> HashSet<u16> {
-    kiore_core::keys::CommandRemap::default_super_keys()
+    mousetail_core::keys::CommandRemap::default_super_keys()
 }
 
 /// Is the OS withholding keystrokes from us (e.g. macOS Secure Input)?
@@ -80,9 +80,9 @@ pub fn on_enter() {}
 mod stubs {
     use std::sync::{Arc, Mutex};
 
-    use kiore_core::controller::{Action, Controller};
-    use kiore_core::layout::Rect;
-    use kiore_core::proto::Scroll;
+    use mousetail_core::controller::{Action, Controller};
+    use mousetail_core::layout::Rect;
+    use mousetail_core::proto::Scroll;
     use tokio::sync::mpsc::UnboundedSender;
 
     pub struct Capture;
@@ -113,7 +113,7 @@ mod stubs {
             anyhow::bail!("playing shared sound isn't supported on this platform yet")
         }
 
-        pub fn play(&self, _packet: kiore_core::audio::AudioPacket) {}
+        pub fn play(&self, _packet: mousetail_core::audio::AudioPacket) {}
     }
 
     /// A virtual speaker whose sound is sent to another machine.
@@ -164,5 +164,5 @@ pub fn machine_name() -> String {
         .ok()
         .and_then(|h| h.into_string().ok())
         .map(|h| h.trim_end_matches(".local").to_string())
-        .unwrap_or_else(|| "Kiore".into())
+        .unwrap_or_else(|| "MouseTail".into())
 }

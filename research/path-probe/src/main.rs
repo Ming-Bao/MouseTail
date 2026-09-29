@@ -3,11 +3,11 @@
 
 use std::net::SocketAddr;
 
-use kiore_core::{identity::Identity, net};
+use mousetail_core::{identity::Identity, net};
 
 #[tokio::main]
 async fn main() {
-    let dir = std::env::temp_dir().join("kiore-path-probe");
+    let dir = std::env::temp_dir().join("mousetail-path-probe");
     let identity = Identity::load_or_create(&dir).unwrap();
     let endpoint = net::endpoint(&identity, 0).unwrap();
     for arg in std::env::args().skip(1) {

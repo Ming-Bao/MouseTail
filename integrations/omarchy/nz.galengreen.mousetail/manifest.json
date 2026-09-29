@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "id": "nz.galengreen.kiore",
-  "name": "Kiore",
+  "id": "nz.galengreen.mousetail",
+  "name": "MouseTail",
   "version": "0.1.0",
   "author": "Galen Green",
   "license": "MIT",
@@ -13,7 +13,7 @@
     "barWidget": "Widget.qml"
   },
   "barWidget": {
-    "displayName": "Kiore",
+    "displayName": "MouseTail",
     "description": "Keyboard and mouse sharing status, pairing codes and clipboard setting.",
     "category": "Network",
     "allowMultiple": false,

@@ -4,15 +4,15 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// Kiore in the Omarchy bar: a mouse that lights up while another computer is connected,
+// MouseTail in the Omarchy bar: a mouse that lights up while another computer is connected,
 // and a panel showing who's connected, any pairing code, and the clipboard setting. Status
-// streams from `kiore watch`, one JSON line per change.
+// streams from `mousetail watch`, one JSON line per change.
 Panel {
   id: root
-  moduleName: "nz.galengreen.kiore"
-  ipcTarget: "nz.galengreen.kiore"
+  moduleName: "nz.galengreen.mousetail"
+  ipcTarget: "nz.galengreen.mousetail"
 
-  readonly property string binary: Quickshell.env("HOME") + "/.local/bin/kiore"
+  readonly property string binary: Quickshell.env("HOME") + "/.local/bin/mousetail"
   readonly property string glyph: "󰍽"
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
@@ -48,7 +48,7 @@ Panel {
   }
 
   function peerDetail(p) {
-    if (!p.paired) return "Found on your network. Run kiore pair to connect it."
+    if (!p.paired) return "Found on your network. Run mousetail pair to connect it."
     if (!p.connected) return "Offline"
     if (status.controlled_by === p.id) return "Using this computer now"
     return "Connected"
@@ -102,7 +102,7 @@ Panel {
     bar: root.bar
     text: root.glyph
     opacity: root.lit ? 1.0 : 0.45
-    tooltipText: "Kiore: " + root.summary
+    tooltipText: "MouseTail: " + root.summary
     onPressed: function(b) { root.toggle() }
   }
 
@@ -159,7 +159,7 @@ Panel {
 
         PanelHero {
           width: parent.width
-          title: "Kiore"
+          title: "MouseTail"
           meta: root.summary
           foreground: root.foreground
           fontFamily: root.fontFamily
@@ -274,7 +274,7 @@ Panel {
           visible: !root.running
           width: parent.width
           wrapMode: Text.WordWrap
-          text: "Kiore isn't running. Start it with: systemctl --user start kiore"
+          text: "MouseTail isn't running. Start it with: systemctl --user start mousetail"
           color: root.dim
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall

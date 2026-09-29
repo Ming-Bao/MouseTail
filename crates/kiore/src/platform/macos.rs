@@ -107,6 +107,7 @@ const MOUSE_BUTTON_NUMBER: u32 = 3;
 const MOUSE_DELTA_X: u32 = 4;
 const MOUSE_DELTA_Y: u32 = 5;
 const KEY_AUTOREPEAT: u32 = 8;
+const EVENT_SOURCE_USER_DATA: u32 = 42;
 const KEY_KEYCODE: u32 = 9;
 const SCROLL_DELTA_AXIS_1: u32 = 11;
 const SCROLL_DELTA_AXIS_2: u32 = 12;
@@ -178,6 +179,9 @@ impl Capture {
     pub fn supported() -> bool {
         true
     }
+
+    /// The event tap sees the whole screen, so it doesn't need to be told about edges.
+    pub fn set_edges(&self, _edges: Vec<super::Edge>) {}
 
     /// Carry out a grab or release decided outside the tap (e.g. peer disconnected).
     pub fn apply(&self, action: &Action) {
@@ -265,6 +269,13 @@ extern "C" fn tap_callback(
     if etype == TAP_DISABLED_BY_TIMEOUT || etype == TAP_DISABLED_BY_USER_INPUT {
         // macOS turns slow taps off; turn it straight back on.
         unsafe { CGEventTapEnable(shared.tap.load(Ordering::SeqCst), true) };
+        return event;
+    }
+    // Input we injected ourselves (another computer controlling this Mac) isn't the local
+    // user: never let it cross edges or be forwarded.
+    if unsafe { CGEventGetIntegerValueField(event, EVENT_SOURCE_USER_DATA) }
+        == super::macos_emulate::KIORE_EVENT
+    {
         return event;
     }
     let grabbed = shared.grabbed.load(Ordering::SeqCst);

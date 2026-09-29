@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::layout::Rect;
 
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 pub const ALPN: &[u8] = b"kiore/1";
 /// Largest control frame accepted (clipboard payloads included).
 pub const MAX_FRAME: usize = 16 * 1024 * 1024;
@@ -106,6 +106,13 @@ pub enum Message {
     /// "Play your sound through me" (true) or stop (false). Sent by the machine with the
     /// speakers; the other side answers by streaming `Datagram::Audio`.
     AudioWanted(bool),
+    /// "In my arrangement, your displays' origin sits at (x, y)", so both computers can keep
+    /// one arrangement. `updated` is when a person last chose it (Unix ms; 0 = automatic).
+    Placement {
+        x: f64,
+        y: f64,
+        updated: u64,
+    },
 }
 
 /// Unreliable, unordered traffic: latest-wins pointer motion and audio packets.

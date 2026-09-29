@@ -1,8 +1,13 @@
 //! Linux / Wayland backend.
 //!
 //! Injection uses unprivileged Wayland protocols (`zwlr_virtual_pointer_v1`,
-//! `zwp_virtual_keyboard_v1`), so no root or udev rules are needed. Display geometry,
-//! shortcuts and the screensaver come from Hyprland / Omarchy when present.
+//! `zwp_virtual_keyboard_v1`), so no root or udev rules are needed. Display geometry comes
+//! from `xdg-output`; shortcuts and the screensaver from Hyprland / Omarchy when present.
+
+pub mod audio;
+pub mod capture;
+mod outputs;
+mod uinput;
 
 use std::collections::HashSet;
 use std::os::fd::{AsFd, OwnedFd};
@@ -48,6 +53,10 @@ struct HyprMonitor {
 }
 
 pub fn displays() -> Vec<DisplayInfo> {
+    // Any Wayland compositor; Hyprland's own tool as a fallback.
+    if let Some(d) = outputs::list() {
+        return d;
+    }
     let Some(monitors) = hyprctl_json::<Vec<HyprMonitor>>(&["monitors"]) else {
         return vec![];
     };
@@ -209,6 +218,10 @@ pub struct Emulator {
 }
 
 impl Emulator {
+    pub fn supported() -> bool {
+        true
+    }
+
     pub fn start() -> anyhow::Result<Self> {
         let (tx, rx) = mpsc::channel();
         let (ready_tx, ready_rx) = mpsc::channel();
@@ -224,9 +237,17 @@ impl Emulator {
                         std::process::exit(1);
                     }
                 }
-                Err(e) => {
-                    let _ = ready_tx.send(Err(e));
-                }
+                // GNOME, KDE, X11…: a kernel virtual device instead.
+                Err(wayland) => match uinput::Uinput::new() {
+                    Ok(dev) => {
+                        tracing::info!("injecting input through /dev/uinput ({wayland:#})");
+                        let _ = ready_tx.send(Ok(()));
+                        dev.run(rx);
+                    }
+                    Err(e) => {
+                        let _ = ready_tx.send(Err(anyhow::anyhow!("{wayland:#}; {e:#}")));
+                    }
+                },
             })?;
         ready_rx.recv().context("emulator thread died")??;
         let emulator = Self { tx };

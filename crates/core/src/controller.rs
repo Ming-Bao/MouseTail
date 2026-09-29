@@ -100,6 +100,9 @@ pub struct Controller {
     local_held: HashSet<u16>,
     remote_held: HashSet<u16>,
     seq: u64,
+    /// While another computer is controlling this one, local input stays local: an injected
+    /// cursor reaching an edge must not bounce off to a third machine.
+    suspended: bool,
 }
 
 impl Controller {
@@ -117,6 +120,7 @@ impl Controller {
             local_held: HashSet::new(),
             remote_held: HashSet::new(),
             seq: 0,
+            suspended: false,
         }
     }
 
@@ -206,7 +210,14 @@ impl Controller {
         self.go_home(None)
     }
 
+    pub fn set_suspended(&mut self, suspended: bool) {
+        self.suspended = suspended;
+    }
+
     pub fn handle(&mut self, input: Input) -> Outcome {
+        if self.suspended && self.state == State::Local {
+            return Outcome::default();
+        }
         match self.state {
             State::Local => self.handle_local(input),
             State::Remote { .. } => self.handle_remote(input),
@@ -664,6 +675,15 @@ mod tests {
                 warp: Point::new(0.0, 500.0)
             }]
         );
+    }
+
+    #[test]
+    fn no_crossing_while_being_controlled() {
+        let mut c = desk();
+        c.set_suspended(true);
+        assert_eq!(c.handle(motion(0.0, 500.0, -3.0, 0.0)), Outcome::default());
+        c.set_suspended(false);
+        enter(&mut c);
     }
 
     #[test]

@@ -24,6 +24,9 @@ core-graphics = "0.25"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "unstable", "staging"] }
+libc = "0.2"
+evdev = "0.13"
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 wayland-protocols-misc = { version = "0.3", features = ["client"] }
 wl-clipboard-rs = "0.9"

@@ -65,12 +65,20 @@ pub struct PeerConfig {
     /// Offset of the peer's displays in this machine's layout. Unset = automatic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub placement: Option<Point>,
+    /// When the placement was last chosen by a person (Unix ms; 0 = automatic). The newest
+    /// arrangement wins when two computers compare theirs.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub placement_updated: u64,
     /// Last known displays, so the arrangement can show the machine while it's offline.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub displays: Vec<DisplayInfo>,
     /// Hardware addresses for waking it (Wake-on-LAN).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wake_macs: Vec<String>,
+}
+
+fn is_zero(v: &u64) -> bool {
+    *v == 0
 }
 
 fn default_port() -> u16 {
@@ -136,6 +144,7 @@ mod tests {
             name: "omarchy".into(),
             fingerprint: "ff".into(),
             placement: Some(Point::new(-1920.0, -49.0)),
+            placement_updated: 0,
             displays: vec![],
             wake_macs: vec![],
         });

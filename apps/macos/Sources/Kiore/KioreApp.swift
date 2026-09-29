@@ -10,7 +10,7 @@ struct KioreApp: App {
         MenuBarExtra {
             MenuContent().environmentObject(model)
         } label: {
-            MenuBarIcon(active: model.status?.controlling != nil)
+            MenuBarIcon(active: model.status?.controlling != nil || model.status?.controlledBy != nil)
         }
         .menuBarExtraStyle(.window)
 

@@ -20,6 +20,9 @@ struct MenuContent: View {
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
+                if let shown = status.pairingCode {
+                    ShownCodePanel(shown: shown)
+                }
                 Divider()
                 machines(status)
                 if let pairing = model.pairing {
@@ -173,6 +176,25 @@ struct PairingPanel: View {
         guard case .awaitingCode(let peer) = pairing, code.count == 4 else { return }
         let entered = code
         Task { await model.submitCode(entered, for: peer) }
+    }
+}
+
+/// Another computer asked to pair: show the code big, to type over there.
+struct ShownCodePanel: View {
+    let shown: ShownCode
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Pairing code").font(.caption).foregroundStyle(.secondary)
+            Text(shown.code.map { String($0) }.joined(separator: " "))
+                .font(.system(size: 30, weight: .semibold, design: .monospaced))
+            Text("Type this on \(shown.name ?? "the other computer") to connect it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 8).fill(.quaternary))
     }
 }
 

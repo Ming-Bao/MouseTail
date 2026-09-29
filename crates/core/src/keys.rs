@@ -178,6 +178,25 @@ pub fn mac_to_evdev(vk: u16) -> Option<u16> {
     })
 }
 
+/// evdev to macOS virtual key code: the inverse of `mac_to_evdev`, for injecting on a Mac.
+/// Where two Mac keys share an evdev code (Return / keypad Enter), the main one wins.
+pub fn evdev_to_mac(code: u16) -> Option<u16> {
+    use std::sync::OnceLock;
+    static TABLE: OnceLock<std::collections::HashMap<u16, u16>> = OnceLock::new();
+    let table = TABLE.get_or_init(|| {
+        let mut t = std::collections::HashMap::new();
+        for vk in (0..0x80u16).rev() {
+            if let Some(ev) = mac_to_evdev(vk) {
+                t.insert(ev, vk);
+            }
+        }
+        t.insert(96, 0x4C); // keypad Enter
+        t.insert(110, 0x72); // Insert → Help, where Mac keyboards have it
+        t
+    });
+    table.get(&code).copied()
+}
+
 /// What Command (the Mac's ⌘, sent as evdev META) becomes on a non-Mac target.
 ///
 /// Command is held back until the next key or click decides it: keys in `super_keys` get
@@ -328,6 +347,19 @@ mod tests {
         let mut r = remap();
         assert_eq!(r.map(30, true), vec![(30, true)]);
         assert_eq!(r.map(30, false), vec![(30, false)]);
+    }
+
+    #[test]
+    fn evdev_maps_back_to_mac() {
+        for vk in 0..0x80u16 {
+            if let Some(ev) = mac_to_evdev(vk)
+                && vk != 0x34
+            {
+                assert_eq!(evdev_to_mac(ev), Some(vk), "vk {vk:#x} (evdev {ev})");
+            }
+        }
+        assert_eq!(evdev_to_mac(LEFTMETA), Some(0x37)); // Super → Command
+        assert_eq!(evdev_to_mac(LEFTALT), Some(0x3A)); // Alt → Option
     }
 
     #[test]

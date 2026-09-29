@@ -102,7 +102,8 @@ pub struct Node {
     /// Set once input capture is running (it may wait for the user to grant permission).
     capture: OnceLock<platform::Capture>,
     capture_error: Mutex<Option<String>>,
-    target: Option<Mutex<Target>>,
+    /// Set once input injection is available (it may wait for permission, as on macOS).
+    target: OnceLock<Mutex<Target>>,
     /// Hash of the clipboard as last sent or received, so unchanged contents aren't resent
     /// and received contents aren't echoed back.
     clipboard_hash: Arc<Mutex<Option<[u8; 32]>>>,
@@ -175,19 +176,6 @@ impl Node {
 
         let (action_tx, action_rx) = mpsc::unbounded_channel();
         let controller = Arc::new(Mutex::new(Controller::new(&id, displays.clone())));
-        let target = match platform::Emulator::start() {
-            Ok(emulator) => Some(Mutex::new(Target {
-                emulator,
-                remap: CommandRemap::new(platform::command_super_keys()),
-                active: None,
-                remap_active: false,
-                last_seq: 0,
-            })),
-            Err(e) => {
-                info!("not accepting input here: {e:#}");
-                None
-            }
-        };
 
         let node = Arc::new(Node {
             id: id.clone(),
@@ -204,7 +192,7 @@ impl Node {
             controller,
             capture: OnceLock::new(),
             capture_error: Mutex::new(None),
-            target,
+            target: OnceLock::new(),
             clipboard_hash: Arc::default(),
             keyboard_warned: Mutex::new(None),
             pair_guard: Mutex::default(),
@@ -216,15 +204,15 @@ impl Node {
             me: OnceLock::new(),
         });
         info!(
-            "Kiore {} as {name:?} ({id}) on UDP {port}; controllable: {}",
+            "Kiore {} as {name:?} ({id}) on UDP {port}",
             env!("CARGO_PKG_VERSION"),
-            node.target.is_some()
         );
         let _ = node.me.set(Arc::downgrade(&node));
         node.add_offline_peers();
         if platform::Capture::supported() {
             tokio::spawn(node.clone().start_capture(action_tx));
         }
+        tokio::spawn(node.clone().start_target());
 
         let (_discovery, found_rx) = discovery::start(&id, &name, port)?;
 
@@ -243,7 +231,7 @@ impl Node {
         info!("shutting down");
         let actions = node.controller.lock().unwrap().release();
         node.apply_actions(actions);
-        if let Some(t) = &node.target {
+        if let Some(t) = node.target.get() {
             t.lock().unwrap().emulator.release_all();
         }
         node.endpoints.close();
@@ -265,6 +253,47 @@ impl Node {
         }
     }
 
+    /// Start injecting input (being controlled), waiting quietly for permission if needed.
+    async fn start_target(self: Arc<Self>) {
+        let mut logged = false;
+        loop {
+            match platform::Emulator::start() {
+                Ok(emulator) => {
+                    let _ = self.target.set(Mutex::new(Target {
+                        emulator,
+                        remap: CommandRemap::new(platform::command_super_keys()),
+                        active: None,
+                        remap_active: false,
+                        last_seq: 0,
+                    }));
+                    info!("accepting input from other computers");
+                    self.announce();
+                    return;
+                }
+                Err(e) if !platform::Emulator::supported() => {
+                    info!("not accepting input here: {e:#}");
+                    return;
+                }
+                Err(e) => {
+                    if !logged {
+                        warn!("can't accept input yet: {e:#}");
+                        logged = true;
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    }
+
+    /// Tell connected computers what we can do now (a role just became available).
+    fn announce(&self) {
+        let hello = Message::Hello(self.hello());
+        let ids: Vec<String> = self.peers.lock().unwrap().keys().cloned().collect();
+        for id in ids {
+            self.send(&id, hello.clone());
+        }
+    }
+
     /// Start capturing input, waiting quietly for permission if it hasn't been granted yet.
     async fn start_capture(self: Arc<Self>, actions: mpsc::UnboundedSender<Action>) {
         let mut prompt = true;
@@ -278,6 +307,8 @@ impl Node {
                     for id in ids {
                         self.peer_up(&id);
                     }
+                    self.refresh_edges();
+                    self.announce();
                     return;
                 }
                 Err(e) => {
@@ -299,7 +330,7 @@ impl Node {
             platform: Platform::current(),
             displays: self.displays.lock().unwrap().clone(),
             can_control: platform::Capture::supported(),
-            can_be_controlled: self.target.is_some(),
+            can_be_controlled: self.target.get().is_some(),
             wake_macs: platform::wake_macs(),
         }
     }
@@ -579,6 +610,7 @@ impl Node {
             });
         }
         self.request_audio(id, &peer);
+        self.share_placement(id);
         if self.capture.get().is_none() || !peer.hello.can_be_controlled {
             return;
         }
@@ -601,6 +633,7 @@ impl Node {
         }
         actions.extend(controller.set_reachable(id, true));
         drop(controller);
+        self.refresh_edges();
         if let Some(offset) = first_placement {
             self.update_config(|c| {
                 if let Some(p) = c.peer_mut(id) {
@@ -611,15 +644,88 @@ impl Node {
         self.apply_actions(actions);
     }
 
+    /// Tell the capture backend which of our edges lead to other computers.
+    fn refresh_edges(&self) {
+        let Some(capture) = self.capture.get() else {
+            return;
+        };
+        let displays = self.displays.lock().unwrap().clone();
+        let sides = self.controller.lock().unwrap().layout().exit_sides(0);
+        let edges = sides
+            .into_iter()
+            .filter_map(|(d, side)| {
+                displays.get(d).map(|display| platform::Edge {
+                    display: display.id.clone(),
+                    side,
+                })
+            })
+            .collect();
+        capture.set_edges(edges);
+    }
+
+    /// Tell a peer where it sits in our arrangement, so it can mirror it.
+    fn share_placement(&self, id: &str) {
+        let placed = self
+            .config
+            .lock()
+            .unwrap()
+            .peer(id)
+            .and_then(|p| p.placement.map(|o| (o, p.placement_updated)));
+        if let Some((o, updated)) = placed {
+            self.send(
+                id,
+                Message::Placement {
+                    x: o.x,
+                    y: o.y,
+                    updated,
+                },
+            );
+        }
+    }
+
+    /// A peer told us where we sit in its arrangement. Mirror it if it's newer than ours (or
+    /// we have none), so arranging on either computer arranges both. Ties between two
+    /// automatic placements go to the computer with the smaller id, so both agree.
+    fn adopt_placement(&self, id: &str, us_in_theirs: Point, updated: u64) {
+        let mirror = Point::new(-us_in_theirs.x, -us_in_theirs.y);
+        let (own, own_updated) = match self.config.lock().unwrap().peer(id) {
+            Some(p) => (p.placement, p.placement_updated),
+            None => return,
+        };
+        let newer = updated > own_updated || (updated == own_updated && id < self.id.as_str());
+        if own == Some(mirror) {
+            return;
+        }
+        if own.is_some() && !newer {
+            // Ours wins. Say so, in case they never heard it (e.g. it arrived before they
+            // finished pairing), so both computers end up with the same arrangement.
+            self.share_placement(id);
+            return;
+        }
+        debug!("adopting {id}'s arrangement");
+        self.update_config(|c| {
+            if let Some(p) = c.peer_mut(id) {
+                p.placement = Some(mirror);
+                p.placement_updated = updated;
+            }
+        });
+        self.peer_up(id);
+    }
+
     fn peer_down(&self, id: &str) {
         self.stop_audio(Some(id));
         let actions = self.controller.lock().unwrap().set_reachable(id, false);
         self.apply_actions(actions);
-        if let Some(t) = &self.target {
+        let was_controlling_us = self.target.get().is_some_and(|t| {
             let mut t = t.lock().unwrap();
-            if t.active.as_deref() == Some(id) {
+            let active = t.active.as_deref() == Some(id);
+            if active {
                 t.leave();
             }
+            active
+        });
+        if was_controlling_us {
+            self.controller.lock().unwrap().set_suspended(false);
         }
         self.pairing.lock().unwrap().remove(id);
     }
@@ -735,7 +841,8 @@ impl Node {
                 .lock()
                 .unwrap()
                 .set_local_displays(now.clone());
-            if let Some(t) = &self.target
+            self.refresh_edges();
+            if let Some(t) = self.target.get()
                 && let Some(bounds) = Rect::bounding(now.iter().map(|d| d.rect))
             {
                 t.lock().unwrap().emulator.set_bounds(bounds);
@@ -754,7 +861,7 @@ impl Node {
         if !self.is_current(id, conn) {
             return;
         }
-        if let Some(t) = &self.target {
+        if let Some(t) = self.target.get() {
             let mut t = t.lock().unwrap();
             if t.active.as_deref() == Some(id) && motion.seq > t.last_seq {
                 t.last_seq = motion.seq;
@@ -787,7 +894,12 @@ impl Node {
                 self.pair_finish(id, Err(reason));
             }
             _ if !peer.paired => debug!("ignoring message from unpaired {}", peer.hello.name),
-            Message::Hello(_) => {}
+            Message::Hello(hello) => {
+                if let Some(p) = self.peers.lock().unwrap().get_mut(id) {
+                    p.hello = hello;
+                }
+                self.peer_up(id);
+            }
             Message::Displays(displays) => {
                 if let Some(p) = self.peers.lock().unwrap().get_mut(id) {
                     p.hello.displays = displays;
@@ -795,6 +907,9 @@ impl Node {
                 self.peer_up(id);
             }
             Message::Clipboard { mime, data } => self.receive_clipboard(id, &peer, mime, data),
+            Message::Placement { x, y, updated } => {
+                self.adopt_placement(id, Point::new(x, y), updated)
+            }
             Message::AudioWanted(wanted) => {
                 // Setting up the speaker can take a moment; keep this connection's input
                 // flowing meanwhile.
@@ -807,19 +922,26 @@ impl Node {
                 // The cursor is leaving us: our clipboard goes with it.
                 let was_active = self
                     .target
-                    .as_ref()
+                    .get()
                     .is_some_and(|t| t.lock().unwrap().active.as_deref() == Some(id));
                 self.on_input(id, &peer, Message::Leave);
                 if was_active {
+                    self.controller.lock().unwrap().set_suspended(false);
                     self.push_clipboard(id);
                 }
             }
-            input => self.on_input(id, &peer, input),
+            input => {
+                if matches!(input, Message::Enter { .. }) && self.target.get().is_some() {
+                    // Being controlled: our own capture stands down until they leave.
+                    self.controller.lock().unwrap().set_suspended(true);
+                }
+                self.on_input(id, &peer, input)
+            }
         }
     }
 
     fn on_input(&self, id: &str, peer: &Peer, msg: Message) {
-        let Some(t) = &self.target else { return };
+        let Some(t) = self.target.get() else { return };
         let mut t = t.lock().unwrap();
         match msg {
             Message::Enter { x, y } => {
@@ -988,7 +1110,7 @@ impl Node {
         // just left. A paired machine can't rewrite the clipboard whenever it likes.
         let controlling_us = self
             .target
-            .as_ref()
+            .get()
             .is_some_and(|t| t.lock().unwrap().active.as_deref() == Some(id));
         let just_left = self
             .left_peer
@@ -1184,11 +1306,17 @@ impl Node {
     fn pin(&self, id: &str, peer: &Peer) {
         info!("paired with {} ({id})", peer.hello.name);
         self.update_config(|c| {
+            // Pairing again (same computer) keeps where it sits on the desk.
+            let (placement, placement_updated) = c
+                .peer(id)
+                .map(|p| (p.placement, p.placement_updated))
+                .unwrap_or((None, 0));
             c.add_peer(PeerConfig {
                 id: id.to_string(),
                 name: peer.hello.name.clone(),
                 fingerprint: peer.fingerprint.clone(),
-                placement: None,
+                placement,
+                placement_updated,
                 displays: peer.hello.displays.clone(),
                 wake_macs: peer.hello.wake_macs.clone(),
             })
@@ -1217,7 +1345,7 @@ impl Node {
         let controller = self.controller.lock().unwrap();
         let controlled_by = self
             .target
-            .as_ref()
+            .get()
             .and_then(|t| t.lock().unwrap().active.clone());
 
         let mut ids: Vec<String> = config.peers.iter().map(|p| p.id.clone()).collect();
@@ -1269,7 +1397,7 @@ impl Node {
             "can_control": self.capture.get().is_some(),
             "keyboard_blocked": platform::keyboard_blocked(),
             "capture_error": *self.capture_error.lock().unwrap(),
-            "can_be_controlled": self.target.is_some(),
+            "can_be_controlled": self.target.get().is_some(),
             "displays": *self.displays.lock().unwrap(),
             "controlling": controller.active_peer(),
             "controlled_by": controlled_by,
@@ -1334,6 +1462,7 @@ impl Node {
         self.update_config(|c| {
             if let Some(p) = c.peer_mut(&id) {
                 p.placement = Some(offset);
+                p.placement_updated = now_ms();
             }
         });
         self.peer_up(&id);
@@ -1422,6 +1551,7 @@ impl Node {
         self.update_config(|c| {
             if let Some(p) = c.peer_mut(&id) {
                 p.placement = Some(offset);
+                p.placement_updated = now_ms();
             }
         });
         let live = self.peer(&id).map(|p| p.hello.displays);
@@ -1548,6 +1678,13 @@ fn stream_audio(pcm: std::sync::mpsc::Receiver<Vec<i16>>, conn: Connection) {
 fn rand_u32() -> u32 {
     use std::hash::{BuildHasher, RandomState};
     RandomState::new().hash_one(Instant::now()) as u32
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 fn clipboard_hash(data: &[u8]) -> [u8; 32] {

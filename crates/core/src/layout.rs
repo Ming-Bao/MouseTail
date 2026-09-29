@@ -252,6 +252,40 @@ impl Layout {
             })
     }
 
+    /// Which sides of `machine`'s displays lead to another computer somewhere along them
+    /// (display index, side). A capture backend watches these edges.
+    pub fn exit_sides(&self, machine: usize) -> Vec<(usize, Side)> {
+        let mut out = vec![];
+        let Some(m) = self.machines.get(machine) else {
+            return out;
+        };
+        for d in 0..m.displays.len() {
+            let from = DisplayRef {
+                machine,
+                display: d,
+            };
+            let a = self.rect(from);
+            for side in [Side::Left, Side::Right, Side::Above, Side::Below] {
+                let (lo, hi) = match side {
+                    Side::Left | Side::Right => (a.y, a.bottom()),
+                    Side::Above | Side::Below => (a.x, a.right()),
+                };
+                let mut v = lo;
+                while v < hi {
+                    if self
+                        .neighbour(from, side, v)
+                        .is_some_and(|c| c.to.machine != machine)
+                    {
+                        out.push((d, side));
+                        break;
+                    }
+                    v += 4.0;
+                }
+            }
+        }
+        out
+    }
+
     /// Stretches of display edge where the cursor passes to another computer, for drawing in
     /// the arrangement view. Each is (start, end) in layout coordinates.
     pub fn crossing_edges(&self) -> Vec<(Point, Point)> {
@@ -539,6 +573,15 @@ mod tests {
         // Higher up, the Dell touches the iMac, so that wins.
         let dell = l.neighbour(imac, Side::Right, -100.0).unwrap();
         assert_eq!(dell.to.display, 1);
+    }
+
+    #[test]
+    fn exit_sides_are_where_other_computers_are() {
+        let l = real_desk();
+        // The Mac: MacBook's left edge (across the gap) and the external display's left edge.
+        assert_eq!(l.exit_sides(0), vec![(0, Side::Left), (1, Side::Left)]);
+        // The iMac: its right edge.
+        assert_eq!(l.exit_sides(1), vec![(0, Side::Right)]);
     }
 
     #[test]

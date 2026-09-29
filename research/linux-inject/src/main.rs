@@ -11,6 +11,7 @@
 //!                                         press Backspace once per char instead of typing
 //!   spike-linux-inject latency            time 1000 absolute moves (client-side send cost)
 //!   spike-linux-inject nudge              one tiny move (idle-reset test)
+//!   spike-linux-inject push dx dy n       n relative moves (like sliding a real mouse)
 
 #[cfg(not(target_os = "linux"))]
 fn main() {
@@ -176,7 +177,7 @@ mod linux {
         let now = || t0.elapsed().as_millis() as u32;
 
         match mode {
-            "pointer" | "latency" | "nudge" => {
+            "pointer" | "latency" | "nudge" | "push" => {
                 let vpm = state
                     .vpm
                     .clone()
@@ -185,6 +186,20 @@ mod linux {
                 queue.roundtrip(&mut state).unwrap();
                 // Extent matches the whole layout; the compositor maps [0,extent] across all outputs.
                 let (w, h) = (1920u32, 1080u32);
+                if mode == "push" {
+                    // Relative motion, like sliding a real mouse: push <dx> <dy> <count>.
+                    let n =
+                        |i: usize, d: f64| args.get(i).and_then(|a| a.parse().ok()).unwrap_or(d);
+                    let (dx, dy, count) = (n(1, 10.0), n(2, 0.0), n(3, 10.0) as usize);
+                    for _ in 0..count {
+                        vp.motion(now(), dx, dy);
+                        vp.frame();
+                        queue.roundtrip(&mut state).unwrap();
+                        sleep(Duration::from_millis(12));
+                    }
+                    println!("cursorpos after push: {}", cursorpos());
+                    return;
+                }
                 if mode == "nudge" {
                     vp.motion_absolute(now(), 961, 541, w, h);
                     vp.frame();

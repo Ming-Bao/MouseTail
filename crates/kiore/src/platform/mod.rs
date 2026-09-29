@@ -9,24 +9,36 @@
 #[cfg(not(target_os = "linux"))]
 use std::collections::HashSet;
 
+/// An edge of one of this machine's displays that leads to another computer (capture
+/// backends that can't watch the whole screen use these).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Edge {
+    pub display: String,
+    pub side: kiore_core::layout::Side,
+}
+
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
 pub mod macos_audio;
 #[cfg(target_os = "macos")]
+mod macos_emulate;
+#[cfg(target_os = "macos")]
 pub use macos::{Capture, clipboard_get, clipboard_set, displays, keyboard_blocked, notify};
+#[cfg(target_os = "macos")]
+pub use macos_emulate::{Emulator, on_enter};
 
 #[cfg(target_os = "linux")]
 mod linux;
-#[cfg(target_os = "linux")]
-pub mod linux_audio;
 #[cfg(target_os = "linux")]
 pub use linux::{
     Emulator, clipboard_get, clipboard_set, command_super_keys, displays, notify, on_enter,
     wake_macs,
 };
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "linux")]
+pub use linux::capture::Capture;
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub use stubs::Capture;
 
 #[cfg(target_os = "macos")]
@@ -35,11 +47,11 @@ pub use macos_audio::Player as AudioPlayer;
 pub use stubs::AudioPlayer;
 
 #[cfg(target_os = "linux")]
-pub use linux_audio::VirtualSpeaker as AudioSource;
+pub use linux::audio::VirtualSpeaker as AudioSource;
 #[cfg(not(target_os = "linux"))]
 pub use stubs::AudioSource;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub use stubs::Emulator;
 
 /// Keys that Command should turn into Super on this machine (see `keys::CommandRemap`).
@@ -61,7 +73,7 @@ pub fn wake_macs() -> Vec<String> {
 }
 
 /// Called when a controller's cursor arrives here.
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub fn on_enter() {}
 
 #[allow(dead_code)]
@@ -89,6 +101,8 @@ mod stubs {
         }
 
         pub fn apply(&self, _action: &Action) {}
+
+        pub fn set_edges(&self, _edges: Vec<super::Edge>) {}
     }
 
     /// Plays another machine's sound here.
@@ -119,6 +133,10 @@ mod stubs {
     impl Emulator {
         pub fn start() -> anyhow::Result<Self> {
             anyhow::bail!("injecting input isn't supported on this platform yet")
+        }
+
+        pub fn supported() -> bool {
+            false
         }
 
         pub fn set_bounds(&self, _bounds: Rect) {}

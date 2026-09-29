@@ -82,6 +82,14 @@ if [[ -d $omarchy ]]; then
   fi
 fi
 
+# On desktops without Wayland's virtual-input protocols, being controlled needs uinput access.
+sleep 3
+if ! "$bin_dir/kiore" status 2>/dev/null | grep -q "can be controlled"; then
+  echo
+  echo "To let other computers control this one on this desktop, run once (asks for your password):"
+  if [[ -x $here/enable-input.sh ]]; then echo "    $here/enable-input.sh"; else echo "    $here/enable-input-linux.sh"; fi
+fi
+
 if systemctl --user is-active --quiet lan-mouse.service 2>/dev/null; then
   echo
   echo "Note: Lan Mouse is also running. Use one or the other:"

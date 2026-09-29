@@ -66,6 +66,13 @@ struct PeerStatus: Codable, Identifiable, Equatable {
     var platform: String?
 }
 
+/// A code this Mac is showing because another computer asked to pair.
+struct ShownCode: Codable, Equatable {
+    var peer: String
+    var name: String?
+    var code: String
+}
+
 struct Status: Codable, Equatable {
     var id: String
     var name: String
@@ -77,6 +84,7 @@ struct Status: Codable, Equatable {
     var displays: [Display]
     var controlling: String?
     var controlledBy: String?
+    var pairingCode: ShownCode?
     var settings: Settings
     var peers: [PeerStatus]
 

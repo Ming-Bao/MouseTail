@@ -7,7 +7,7 @@ to open it: go to **System Settings → Privacy & Security** and click **Open An
 **Linux** (Wayland: Hyprland / Omarchy):
 
 ```sh
-curl -fsSL https://galengreen.github.io/kiore/install.sh | sh
+curl -fsSL https://kiore.galen.green/install.sh | sh
 ```
 
 or download `kiore-linux-<arch>.tar.gz`, extract it and run `./install.sh`.

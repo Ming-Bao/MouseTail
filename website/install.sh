@@ -1,5 +1,5 @@
 #!/bin/sh
-# Kiore installer for Linux:  curl -fsSL https://galengreen.github.io/kiore/install.sh | sh
+# Kiore installer for Linux:  curl -fsSL https://kiore.galen.green/install.sh | sh
 # Downloads the latest release for this computer and installs it for the current user.
 set -eu
 repo=galengreen/kiore

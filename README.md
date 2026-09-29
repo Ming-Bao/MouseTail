@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <a href="https://galengreen.github.io/kiore/">Website</a> ·
+  <a href="https://kiore.galen.green/">Website</a> ·
   <a href="https://github.com/galengreen/kiore/releases/latest">Download</a> ·
   <a href="docs/DESIGN.md">How it works</a>
 </p>
@@ -70,7 +70,7 @@ clipboard yet). Sound currently goes from Linux to a Mac.
 **Linux** (Wayland), no sudo needed:
 
 ```sh
-curl -fsSL https://galengreen.github.io/kiore/install.sh | sh
+curl -fsSL https://kiore.galen.green/install.sh | sh
 ```
 
 This installs `~/.local/bin/kiore`, runs it as a systemd user service that starts with your
@@ -138,7 +138,7 @@ Releases are built by GitHub Actions when a `v*` tag is pushed.
 | `crates/kiore` | The daemon and CLI, with macOS and Linux backends |
 | `apps/macos` | SwiftUI menu bar app |
 | `integrations/omarchy` | Omarchy bar plugin |
-| `website` | [galengreen.github.io/kiore](https://galengreen.github.io/kiore/) |
+| `website` | [kiore.galen.green](https://kiore.galen.green/) |
 | `docs/DESIGN.md` | Architecture and the reasoning behind it |
 | `research` | The feasibility experiments done before building, and their results |
 | `dev` | Scripts for developing against a real Mac + Linux pair |

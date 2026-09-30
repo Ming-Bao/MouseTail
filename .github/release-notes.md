@@ -10,6 +10,11 @@
   speed and its apps' momentum apply, rather than the Mac's.
 - Only one cursor on show: the computer you've just left hides its own until you use its
   mouse again, rather than leaving it sitting at the edge.
+- Sound goes both ways: push from Linux onto a Mac and the Mac's sound comes to Linux too
+  (it needs the System Audio Recording permission). Your AirPods, media keys and the
+  desktop's play controls play, pause and skip whatever the other computer is playing.
+- The Omarchy panel can now pair, arrange (drag computers to where they sit, like Arrange
+  Displays on a Mac), change settings and check for updates.
 - MouseTail keeps itself up to date. If you're on 0.2.0 or earlier, install this release by
   hand once on each computer; 0.2.1 and later update by themselves.
 

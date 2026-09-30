@@ -22,6 +22,8 @@ Usage:
   mousetail status                      Show this machine and the ones it can see
   mousetail pair [machine]              Pair with a machine (it shows a code to type here)
   mousetail unpair <machine>            Forget a paired machine
+  mousetail pause <machine>             Stop sharing with a machine for now (stays paired)
+  mousetail resume <machine>            Start sharing with a paused machine again
   mousetail place <machine> <side> [n]  Put a machine left/right/above/below display n
                                         (default: the main display)
   mousetail release                     Bring the cursor back to this machine
@@ -91,6 +93,18 @@ async fn run() -> anyhow::Result<()> {
             let peer = arg(1).context("which machine?")?.to_string();
             let v = ipc::call(&paths.socket, &Request::Unpair { peer }).await?;
             println!("Forgot {}.", v["name"].as_str().unwrap_or("it"));
+            Ok(())
+        }
+        cmd @ ("pause" | "resume") => {
+            let peer = arg(1).context("which machine?")?.to_string();
+            let paused = cmd == "pause";
+            let v = ipc::call(&paths.socket, &Request::SetPaused { peer, paused }).await?;
+            let name = v["name"].as_str().unwrap_or("it");
+            if paused {
+                println!("Paused {name}. `mousetail resume {name}` to carry on.");
+            } else {
+                println!("Resumed {name}.");
+            }
             Ok(())
         }
         "place" => {
@@ -265,6 +279,7 @@ fn status_text(v: &Value) -> String {
     }
     for p in peers {
         let state = match (p["paired"] == true, p["connected"] == true) {
+            _ if p["paused"] == true => "paired, paused — run `mousetail resume`",
             (true, true) => "paired, connected",
             (true, false) => "paired, not connected",
             (false, true) => "not paired — run `mousetail pair`",

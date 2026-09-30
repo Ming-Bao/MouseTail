@@ -116,7 +116,7 @@ struct MenuContent: View {
         guard let s = model.status else { return "" }
         if let peer = s.peerName(s.controlling) { return "Cursor on \(peer)" }
         if let peer = s.peerName(s.controlledBy) { return "Controlled by \(peer)" }
-        let connected = s.peers.filter { $0.paired && $0.connected }.count
+        let connected = s.peers.filter { $0.paired && $0.connected && $0.paused != true }.count
         switch connected {
         case 0: return "Not connected"
         case 1: return "Ready"
@@ -266,7 +266,23 @@ struct PeerRow: View {
                 Button("Pair…") { Task { await model.startPairing(peer) } }
                     .controlSize(.small)
             } else if peer.paired {
+                Button {
+                    Task { await model.setPaused(peer, !paused) }
+                } label: {
+                    Image(systemName: paused ? "play.fill" : "pause.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(paused ? "Resume \(peer.name)" : "Pause \(peer.name) without forgetting it")
+                .focusable(false)
                 Menu {
+                    Button(paused ? "Resume \(peer.name)" : "Pause \(peer.name)") {
+                        Task { await model.setPaused(peer, !paused) }
+                    }
+                    Divider()
                     Button("Forget \(peer.name)", role: .destructive) { Task { await model.unpair(peer) } }
                 } label: {
                     Image(systemName: "ellipsis")
@@ -282,13 +298,17 @@ struct PeerRow: View {
         .padding(.vertical, 4)
     }
 
+    private var paused: Bool { peer.paused == true }
+
     private var dotColour: Color {
         guard peer.connected else { return .secondary }
+        if paused { return .yellow }
         return peer.paired ? .green : .orange
     }
 
     private var detail: String {
         if !peer.paired { return peer.connected ? "Found on your network" : "Not paired" }
+        if paused { return peer.connected ? "Paused" : "Paused · Offline" }
         guard peer.connected else { return "Offline" }
         var parts = ["Connected"]
         if let ms = peer.rttMs { parts.append(String(format: "%.0f ms", ms)) }

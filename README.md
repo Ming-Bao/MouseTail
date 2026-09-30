@@ -119,6 +119,8 @@ Both platforms have the same `mousetail` command (on the Mac it's inside the app
 mousetail status                      what's connected, and where the cursor is
 mousetail pair [computer]             pair (the other computer shows a code to type here)
 mousetail unpair <computer>           forget a computer
+mousetail pause <computer>            stop sharing with it for now (it stays paired)
+mousetail resume <computer>           start sharing with it again
 mousetail place <computer> <side> [n] put it left/right/above/below display n
 mousetail set <clipboard|audio|updates|ripple> <on|off>
 mousetail update                      install the latest release now (Linux)

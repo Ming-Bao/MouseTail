@@ -100,6 +100,18 @@ pub struct PeerConfig {
     /// When `listen` was decided (Unix ms).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub listen_updated: u64,
+    /// Paused: still paired, but nothing crosses (cursor, keyboard, clipboard, sound) until
+    /// it's resumed, from either computer.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub paused: bool,
+    /// When it was last paused or resumed (Unix ms; 0 = never). The newest wins when two
+    /// computers compare.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub paused_updated: u64,
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
 }
 
 fn is_zero(v: &u64) -> bool {
@@ -232,6 +244,8 @@ mod tests {
             wake_macs: vec![],
             listen: Some(true),
             listen_updated: 7,
+            paused: true,
+            paused_updated: 9,
         });
         let text = toml::to_string_pretty(&c).unwrap();
         assert_eq!(toml::from_str::<Config>(&text).unwrap(), c);
@@ -250,6 +264,8 @@ mod tests {
             wake_macs: vec![],
             listen: None,
             listen_updated: 0,
+            paused: false,
+            paused_updated: 0,
         };
         let mut c = Config::default();
         c.add_peer(peer("abc1", "iMac"));

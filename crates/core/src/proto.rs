@@ -165,6 +165,13 @@ pub enum Message {
     },
     /// The fingers have left the trackpad, ending a run of `TrackpadScroll`.
     TrackpadScrollEnd,
+    /// "The link between us is paused" (or resumed), so pausing on either computer pauses
+    /// both. `updated` is when a person chose it (Unix ms); the newer choice wins. Peers that
+    /// predate it just see us stop taking input (`Hello::can_be_controlled`).
+    Paused {
+        paused: bool,
+        updated: u64,
+    },
 }
 
 impl Message {

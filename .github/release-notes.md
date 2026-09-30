@@ -3,6 +3,9 @@
 - A ripple spreads from the edge wherever the cursor crosses to or from another computer, so
   you can see where it went. Turn it off with **Ripple when crossing** in the menu (Mac) or
   the Omarchy panel, or `mousetail set ripple off`.
+- Pause a paired computer without forgetting it: the pause button beside it in the menu (or
+  the Omarchy panel, or `mousetail pause <computer>`). Nothing crosses until you resume it,
+  from either computer.
 - Scrolling with a Mac's trackpad on a Linux computer feels like its own trackpad: its scroll
   speed and its apps' momentum apply, rather than the Mac's.
 - Only one cursor on show: the computer you've just left hides its own until you use its

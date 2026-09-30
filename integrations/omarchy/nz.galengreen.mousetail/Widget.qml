@@ -22,7 +22,7 @@ Panel {
   property var status: ({})
 
   readonly property var peers: (status.peers || []).filter(function(p) { return p.paired || p.connected })
-  readonly property var connectedPeers: peers.filter(function(p) { return p.paired && p.connected })
+  readonly property var connectedPeers: peers.filter(function(p) { return p.paired && p.connected && !p.paused })
   readonly property string controlledBy: nameOf(status.controlled_by)
   readonly property var pairingCode: status.pairing_code || null
   readonly property bool clipboard: status.settings ? status.settings.clipboard === true : true
@@ -47,6 +47,7 @@ Panel {
 
   function peerDetail(p) {
     if (!p.paired) return "Found on your network. Run mousetail pair to connect it."
+    if (p.paused) return p.connected ? "Paused" : "Paused · Offline"
     if (!p.connected) return "Offline"
     if (status.controlled_by === p.id) return "Using this computer now"
     return "Connected"
@@ -84,6 +85,10 @@ Panel {
 
   function setAudio(on) {
     runSetter([binary, "set", "audio", on ? "on" : "off"])
+  }
+
+  function setPaused(p, paused) {
+    runSetter([binary, paused ? "pause" : "resume", p.id])
   }
 
   Process {
@@ -267,23 +272,51 @@ Panel {
           Repeater {
             model: root.peers
 
-            delegate: Column {
+            delegate: Item {
               required property var modelData
               width: parent.width
-              spacing: Style.space(1)
+              implicitHeight: peerText.implicitHeight
 
-              Text {
-                text: modelData.name
-                color: modelData.connected ? root.foreground : root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.body
+              Column {
+                id: peerText
+                anchors.left: parent.left
+                anchors.right: pauseButton.left
+                spacing: Style.space(1)
+
+                Text {
+                  text: modelData.name
+                  color: modelData.connected && !modelData.paused ? root.foreground : root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                }
+
+                Text {
+                  text: root.peerDetail(modelData)
+                  color: root.dim
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.caption
+                }
               }
 
+              // Pause without forgetting it, and resume.
               Text {
-                text: root.peerDetail(modelData)
-                color: root.dim
+                id: pauseButton
+                visible: modelData.paired
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                text: modelData.paused ? "Resume" : "Pause"
+                color: pauseArea.containsMouse ? root.foreground : root.dim
                 font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
+                font.pixelSize: Style.font.bodySmall
+
+                MouseArea {
+                  id: pauseArea
+                  anchors.fill: parent
+                  anchors.margins: -Style.space(4)
+                  hoverEnabled: true
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.setPaused(modelData, !modelData.paused)
+                }
               }
             }
           }

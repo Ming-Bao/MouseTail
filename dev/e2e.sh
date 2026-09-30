@@ -75,6 +75,29 @@ case ${1:-motion} in
     check "home after hotkey" "$(state | xargs)" "cursor is home"
     check "Mac cursor where it left" "$($drive where)" "0, 500"
     ;;
+  scroll)
+    echo "== trackpad scrolling reaches iMac apps as a trackpad of their own"
+    # A window logging its Wayland events, alone on a spare workspace so the cursor is over it.
+    ws=$(imac "hyprctl activeworkspace -j | jq .id")
+    imac "hyprctl dispatch 'hl.dsp.focus({ workspace = \"9\" })' >/dev/null; rm -f /tmp/mousetail-wl.log; hyprctl dispatch 'hl.dsp.exec_cmd([[sh -c \"WAYLAND_DEBUG=1 foot --app-id=mousetail-test sleep 30 2>/tmp/mousetail-wl.log\"]])' >/dev/null"
+    for _ in $(seq 1 20); do sleep 0.25; imac "hyprctl activewindow -j | jq -e '.class == \"mousetail-test\"' >/dev/null" && break; done
+    crossings() { grep -c "cursor → " /tmp/mousetail-mac.log; }
+    before=$(crossings)
+    $drive warp 5 500; sleep 0.2; $drive push -10 0 3; sleep 0.3
+    sleep 0.3
+    if (( $(crossings) == before )); then echo "  FAIL didn't cross to the other computer ($before, $(crossings))"; exit 1; fi
+    # 10 finger moves of 20 points, then the Mac's own momentum (which must not arrive).
+    $drive trackpad 20 10; sleep 0.3
+    $drive scroll -1; sleep 0.3
+    $drive push 3000 0 1; sleep 0.3
+    log=$(imac "grep -E 'wl_pointer#[0-9]+\.axis' /tmp/mousetail-wl.log")
+    imac "hyprctl clients -j | jq -r '.[] | select(.class == \"mousetail-test\") | .pid' | xargs -r pkill -P; hyprctl dispatch 'hl.dsp.focus({ workspace = \"$ws\" })' >/dev/null"
+    finger=$(grep -A1 'axis_source(1)' <<<"$log" | grep -oE 'axis\([0-9]+, 0, [-0-9.]+\)' | grep -oE '[-0-9.]+\)$' | tr -d ')')
+    check "finger scroll events" "$(wc -l <<<"$finger" | xargs)" "10"
+    check "Omarchy's touchpad scroll factor applied (0.5 x 20)" "$(sort -u <<<"$finger" | xargs)" "10.00000000"
+    check "axis stop when the fingers lift" "$(grep -c 'axis_stop' <<<"$log")" "1"
+    check "mouse wheel still a wheel" "$(grep -c 'axis_source(0)' <<<"$log")" "1"
+    ;;
   freeze)
     echo "== a frozen iMac can't trap the cursor"
     $drive warp 5 500; sleep 0.2; $drive push -10 0 2; sleep 0.3

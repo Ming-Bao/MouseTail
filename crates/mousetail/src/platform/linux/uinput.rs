@@ -152,6 +152,13 @@ impl Uinput {
                     self.emit(&events)
                 }
             }
+            // A kernel wheel has no fingers to lift: scroll smoothly as before.
+            Cmd::TrackpadScroll(dx, dy) => self.apply(Cmd::Scroll(mousetail_core::proto::Scroll {
+                dx,
+                dy,
+                notches: None,
+            })),
+            Cmd::TrackpadScrollEnd => Ok(()),
             Cmd::ReleaseAll => {
                 let held: Vec<u16> = self.keys.drain().chain(self.buttons.drain()).collect();
                 for code in held {

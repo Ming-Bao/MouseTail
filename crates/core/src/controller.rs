@@ -31,6 +31,13 @@ pub enum Input {
         down: bool,
     },
     Scroll(Scroll),
+    /// Fingers scrolling on a trackpad, momentum left out (see `Message::TrackpadScroll`).
+    TrackpadScroll {
+        dx: f64,
+        dy: f64,
+    },
+    /// The fingers have left the trackpad.
+    TrackpadScrollEnd,
     Key {
         code: u16,
         down: bool,
@@ -394,7 +401,9 @@ impl Controller {
                 }
                 Outcome::default()
             }
-            Input::Scroll(_) => Outcome::default(),
+            Input::Scroll(_) | Input::TrackpadScroll { .. } | Input::TrackpadScrollEnd => {
+                Outcome::default()
+            }
             Input::Motion {
                 at,
                 dx,
@@ -549,6 +558,14 @@ impl Controller {
             Input::Scroll(s) => out.actions.push(Action::Send {
                 peer,
                 msg: Message::Scroll(s),
+            }),
+            Input::TrackpadScroll { dx, dy } => out.actions.push(Action::Send {
+                peer,
+                msg: Message::TrackpadScroll { dx, dy },
+            }),
+            Input::TrackpadScrollEnd => out.actions.push(Action::Send {
+                peer,
+                msg: Message::TrackpadScrollEnd,
             }),
         }
         out

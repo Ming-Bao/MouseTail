@@ -17,13 +17,16 @@ use crate::layout::Rect;
 /// Anything else is a breaking change: bump `PROTOCOL_VERSION` and `MIN_PROTOCOL_VERSION`.
 ///
 /// History: 5 sends each clipboard on a stream of its own (see `net::send_clipboard`) to peers
-/// on 5 or later, so a big one doesn't hold up input; 4 sends it inline.
-pub const PROTOCOL_VERSION: u32 = 5;
+/// on 5 or later, so a big one doesn't hold up input; 4 sends it inline. 6 adds
+/// `TrackpadScroll` and `TrackpadScrollEnd`; older peers get `Scroll` instead.
+pub const PROTOCOL_VERSION: u32 = 6;
 /// First protocol with clipboards on their own streams.
 pub const CLIPBOARD_STREAMS: u32 = 5;
 /// First protocol whose peers skip messages they don't know (4 hangs up), so newer messages
 /// such as `SoundCaps` and `Media` can go to them.
 pub const SKIPS_UNKNOWN: u32 = 5;
+/// First protocol that understands `TrackpadScroll`.
+pub const TRACKPAD_SCROLL: u32 = 6;
 /// Oldest protocol this build still talks to. Newer peers are accepted: they only add things
 /// we skip, and they check that we're new enough for them.
 pub const MIN_PROTOCOL_VERSION: u32 = 4;
@@ -153,6 +156,33 @@ pub enum Message {
         wanted: bool,
         updated: u64,
     },
+    /// Fingers scrolling on a trackpad (Wayland convention, points), without the sender's
+    /// momentum: the receiver treats it like its own trackpad, so its scroll speed settings
+    /// and its apps' kinetic scrolling apply.
+    TrackpadScroll {
+        dx: f64,
+        dy: f64,
+    },
+    /// The fingers have left the trackpad, ending a run of `TrackpadScroll`.
+    TrackpadScrollEnd,
+}
+
+impl Message {
+    /// This message as a peer speaking `protocol` understands it, or `None` to leave it out.
+    pub fn for_protocol(self, protocol: u32) -> Option<Self> {
+        if protocol >= TRACKPAD_SCROLL {
+            return Some(self);
+        }
+        match self {
+            Message::TrackpadScroll { dx, dy } => Some(Message::Scroll(Scroll {
+                dx,
+                dy,
+                notches: None,
+            })),
+            Message::TrackpadScrollEnd => None,
+            msg => Some(msg),
+        }
+    }
 }
 
 /// Media controls, as the headphones or keyboard sent them.
@@ -223,6 +253,22 @@ mod tests {
         let mut unknown = encode(&Message::Leave);
         unknown[0] = 100;
         assert!(decode::<Message>(&unknown).is_err());
+    }
+
+    #[test]
+    fn trackpad_scroll_falls_back_for_older_peers() {
+        let scroll = Message::TrackpadScroll { dx: 1.5, dy: -4.0 };
+        assert_eq!(scroll.clone().for_protocol(6), Some(scroll.clone()));
+        assert_eq!(
+            scroll.for_protocol(5),
+            Some(Message::Scroll(Scroll {
+                dx: 1.5,
+                dy: -4.0,
+                notches: None,
+            }))
+        );
+        assert_eq!(Message::TrackpadScrollEnd.for_protocol(5), None);
+        assert_eq!(Message::Leave.for_protocol(4), Some(Message::Leave));
     }
 
     #[test]

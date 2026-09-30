@@ -227,6 +227,8 @@ mod stubs {
         pub fn button(&self, _code: u16, _down: bool) {}
         pub fn key(&self, _code: u16, _down: bool) {}
         pub fn scroll(&self, _scroll: Scroll) {}
+        pub fn trackpad_scroll(&self, _dx: f64, _dy: f64) {}
+        pub fn trackpad_scroll_end(&self) {}
         pub fn release_all(&self) {}
         pub fn media(&self, _key: mousetail_core::proto::MediaKey) {}
     }

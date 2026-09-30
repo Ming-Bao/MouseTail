@@ -757,7 +757,9 @@ impl Node {
     }
 
     fn send(&self, id: &str, msg: Message) {
-        if let Some(p) = self.peers.lock().unwrap().get(id) {
+        if let Some(p) = self.peers.lock().unwrap().get(id)
+            && let Some(msg) = msg.for_protocol(p.hello.protocol)
+        {
             let _ = p.tx.send(msg);
         }
     }
@@ -1327,6 +1329,8 @@ impl Node {
                 }
             }
             Message::Scroll(s) => t.emulator.scroll(s),
+            Message::TrackpadScroll { dx, dy } => t.emulator.trackpad_scroll(dx, dy),
+            Message::TrackpadScrollEnd => t.emulator.trackpad_scroll_end(),
             _ => {}
         }
     }

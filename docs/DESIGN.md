@@ -146,6 +146,9 @@ Modelled on *System Settings → Displays → Arrange*:
 
 - `CGEventTap` at the session level for mouse moves, buttons, scroll (including continuous /
   trackpad scroll and momentum phases) and keys (including `flagsChanged` for modifiers).
+- Trackpad scrolling goes out as `TrackpadScroll` with the Mac's momentum left out, and
+  `TrackpadScrollEnd` when the fingers lift, so the receiver scrolls as if they were on its
+  own trackpad: its touchpad scroll speed and its apps' kinetic scrolling apply.
 - While remote: events are swallowed; cursor hidden and dissociated
   (`CGAssociateMouseAndMouseCursorPosition(false)`), deltas read from the events.
 - Requires Accessibility + Input Monitoring permissions (first-run guide in the app).
@@ -157,7 +160,9 @@ at the Omarchy lock screen):
 
 - **Pointer:** `zwlr_virtual_pointer_v1.motion_absolute` with the extent set to the whole
   Hyprland layout, so multi-monitor maps naturally. Buttons and `axis` scroll (with
-  `axis_source`/`axis_discrete` for smooth vs notched) on the same object.
+  `axis_source`/`axis_discrete` for smooth vs notched, `Finger` plus `axis_stop` for another
+  computer's trackpad) on the same object. Absolute motion means the compositor's pointer
+  speed doesn't apply: the controlling computer's own tracking speed does.
 - **Keyboard:** `zwp_virtual_keyboard_v1`, loaded with the seat's own keymap so the iMac's
   layout applies; keys are evdev codes.
 - Writes must wait for socket writability on `EWOULDBLOCK` rather than drop or panic.
@@ -367,8 +372,6 @@ mousetail.sock` (macOS), mode 0600. Requests: `status`, `layout`, `pair`, `pair_
 
 ## Known issues / next up
 
-- **Keyboard end-to-end test** (typing, Command → Ctrl/Super, hotkey) still needs a run with
-  the Mac unlocked; macOS Secure Input blocks synthetic keys while it's locked.
 - Occasional multi-second Wi-Fi stalls (likely AWDL); reconnect backoff is capped at 4 s.
 
 ## Reference setup

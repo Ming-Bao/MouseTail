@@ -215,6 +215,8 @@ enum Cmd {
     Button(u16, bool),
     Key(u16, bool),
     Scroll(Scroll),
+    TrackpadScroll(f64, f64),
+    TrackpadScrollEnd,
     ReleaseAll,
 }
 
@@ -287,6 +289,14 @@ impl Emulator {
         self.send(Cmd::Scroll(scroll));
     }
 
+    pub fn trackpad_scroll(&self, dx: f64, dy: f64) {
+        self.send(Cmd::TrackpadScroll(dx, dy));
+    }
+
+    pub fn trackpad_scroll_end(&self) {
+        self.send(Cmd::TrackpadScrollEnd);
+    }
+
     pub fn release_all(&self) {
         self.send(Cmd::ReleaseAll);
     }
@@ -304,6 +314,15 @@ impl Emulator {
     }
 }
 
+/// How far to scroll one axis.
+#[derive(Clone, Copy)]
+enum AxisAmount {
+    Smooth(f64),
+    Notches(i32),
+    /// The fingers lifted.
+    Stop,
+}
+
 /// Sub-pixel resolution for absolute motion.
 const SUBPIXEL: f64 = 8.0;
 
@@ -318,6 +337,8 @@ struct Injector {
     keys: HashSet<u16>,
     buttons: HashSet<u16>,
     xkb: keystate::KeyState,
+    /// Fingers are scrolling, so apps are owed an axis stop when they lift.
+    finger_scrolling: bool,
 }
 
 impl Injector {
@@ -372,6 +393,7 @@ impl Injector {
             keys: HashSet::new(),
             buttons: HashSet::new(),
             xkb: keystate::KeyState::new(keymap),
+            finger_scrolling: false,
         })
         .inspect(|injector| injector.send_modifiers())
     }
@@ -430,40 +452,38 @@ impl Injector {
             Cmd::Key(code, down) => self.key(t, code, down),
             Cmd::Scroll(s) => {
                 match s.notches {
-                    Some((nx, ny)) => {
-                        self.pointer.axis_source(AxisSource::Wheel);
-                        if ny != 0 {
-                            self.pointer.axis_discrete(
-                                t,
-                                Axis::VerticalScroll,
-                                ny as f64 * 15.0,
-                                ny,
-                            );
-                        }
-                        if nx != 0 {
-                            self.pointer.axis_discrete(
-                                t,
-                                Axis::HorizontalScroll,
-                                nx as f64 * 15.0,
-                                nx,
-                            );
-                        }
-                    }
-                    None => {
-                        // Continuous: the Mac already applies momentum, so don't use
-                        // `Finger` (clients would add their own kinetic scrolling).
-                        self.pointer.axis_source(AxisSource::Continuous);
-                        if s.dy != 0.0 {
-                            self.pointer.axis(t, Axis::VerticalScroll, s.dy);
-                        }
-                        if s.dx != 0.0 {
-                            self.pointer.axis(t, Axis::HorizontalScroll, s.dx);
-                        }
-                    }
+                    Some((nx, ny)) => self.scroll(
+                        t,
+                        AxisAmount::Notches(nx),
+                        AxisAmount::Notches(ny),
+                        AxisSource::Wheel,
+                    ),
+                    // Continuous: a smooth wheel whose momentum, if any, is already in the
+                    // deltas, so not `Finger` (clients would add their own).
+                    None => self.scroll(
+                        t,
+                        AxisAmount::Smooth(s.dx),
+                        AxisAmount::Smooth(s.dy),
+                        AxisSource::Continuous,
+                    ),
                 }
                 self.pointer.frame();
             }
+            Cmd::TrackpadScroll(dx, dy) => {
+                // `Finger`, like a trackpad here: the compositor applies its touchpad scroll
+                // speed, and apps their kinetic scrolling once the fingers lift.
+                self.finger_scrolling = true;
+                self.scroll(
+                    t,
+                    AxisAmount::Smooth(dx),
+                    AxisAmount::Smooth(dy),
+                    AxisSource::Finger,
+                );
+                self.pointer.frame();
+            }
+            Cmd::TrackpadScrollEnd => self.end_finger_scroll(t),
             Cmd::ReleaseAll => {
+                self.end_finger_scroll(t);
                 for code in std::mem::take(&mut self.keys) {
                     self.keyboard.key(t, code as u32, 0);
                 }
@@ -476,6 +496,31 @@ impl Injector {
                 self.xkb.reset();
                 self.send_modifiers();
             }
+        }
+    }
+
+    fn end_finger_scroll(&mut self, t: u32) {
+        if !std::mem::take(&mut self.finger_scrolling) {
+            return;
+        }
+        self.scroll(t, AxisAmount::Stop, AxisAmount::Stop, AxisSource::Finger);
+        self.pointer.frame();
+    }
+
+    /// Scroll both axes (skipping still ones) from `source`. Hyprland starts a fresh wheel
+    /// event on each `axis` and gives `axis_source` to the latest one, so the source has to
+    /// follow each axis rather than lead the frame as the protocol suggests.
+    fn scroll(&self, t: u32, x: AxisAmount, y: AxisAmount, source: AxisSource) {
+        for (axis, amount) in [(Axis::VerticalScroll, y), (Axis::HorizontalScroll, x)] {
+            match amount {
+                AxisAmount::Smooth(v) if v != 0.0 => self.pointer.axis(t, axis, v),
+                AxisAmount::Notches(n) if n != 0 => {
+                    self.pointer.axis_discrete(t, axis, n as f64 * 15.0, n)
+                }
+                AxisAmount::Stop => self.pointer.axis_stop(t, axis),
+                _ => continue,
+            }
+            self.pointer.axis_source(source);
         }
     }
 

@@ -164,6 +164,18 @@ impl Emulator {
         self.send(Cmd::Scroll(scroll));
     }
 
+    /// Synthetic events can't carry trackpad phases (macOS adds momentum only for real
+    /// trackpads), so these scroll smoothly like any other.
+    pub fn trackpad_scroll(&self, dx: f64, dy: f64) {
+        self.scroll(Scroll {
+            dx,
+            dy,
+            notches: None,
+        });
+    }
+
+    pub fn trackpad_scroll_end(&self) {}
+
     pub fn release_all(&self) {
         self.send(Cmd::ReleaseAll);
     }

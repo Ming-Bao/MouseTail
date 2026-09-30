@@ -116,6 +116,13 @@ const SCROLL_DELTA_AXIS_2: u32 = 12;
 const SCROLL_IS_CONTINUOUS: u32 = 88;
 const SCROLL_POINT_DELTA_AXIS_1: u32 = 96;
 const SCROLL_POINT_DELTA_AXIS_2: u32 = 97;
+const SCROLL_PHASE: u32 = 99;
+const SCROLL_MOMENTUM_PHASE: u32 = 123;
+
+// CGScrollPhase
+const SCROLL_PHASE_ENDED: i64 = 4;
+const SCROLL_PHASE_CANCELLED: i64 = 8;
+const SCROLL_PHASE_MAY_BEGIN: i64 = 128;
 
 const SESSION_TAP: u32 = 1;
 const HEAD_INSERT: u32 = 0;
@@ -421,11 +428,27 @@ unsafe fn to_inputs(etype: u32, event: CGEventRef, grabbed: bool) -> Vec<Input> 
             }
             SCROLL_WHEEL => {
                 let continuous = CGEventGetIntegerValueField(event, SCROLL_IS_CONTINUOUS) != 0;
+                let phase = CGEventGetIntegerValueField(event, SCROLL_PHASE);
+                let momentum = CGEventGetIntegerValueField(event, SCROLL_MOMENTUM_PHASE);
                 // Quartz: positive = content towards the top/left; Wayland is the reverse.
+                let dx = -CGEventGetDoubleValueField(event, SCROLL_POINT_DELTA_AXIS_2);
+                let dy = -CGEventGetDoubleValueField(event, SCROLL_POINT_DELTA_AXIS_1);
+                if continuous && (phase != 0 || momentum != 0) {
+                    // A trackpad (or Magic Mouse): send only what the fingers do, so the
+                    // other computer scrolls as if they were on its own trackpad, momentum
+                    // included.
+                    return match phase {
+                        0 | SCROLL_PHASE_MAY_BEGIN => vec![],
+                        SCROLL_PHASE_ENDED | SCROLL_PHASE_CANCELLED => {
+                            vec![Input::TrackpadScrollEnd]
+                        }
+                        _ => vec![Input::TrackpadScroll { dx, dy }],
+                    };
+                }
                 let scroll = if continuous {
                     Scroll {
-                        dx: -CGEventGetDoubleValueField(event, SCROLL_POINT_DELTA_AXIS_2),
-                        dy: -CGEventGetDoubleValueField(event, SCROLL_POINT_DELTA_AXIS_1),
+                        dx,
+                        dy,
                         notches: None,
                     }
                 } else {

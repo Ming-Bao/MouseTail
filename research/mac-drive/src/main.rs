@@ -6,6 +6,7 @@
 //!   spike-mac-drive push <dx> <dy> <n>     post n relative moves (like sliding the mouse)
 //!   spike-mac-drive click                  left click at the cursor
 //!   spike-mac-drive scroll <lines>         notched wheel scroll (positive = wheel up)
+//!   spike-mac-drive trackpad <points> <n>  two-finger scroll: n moves, lift, then momentum
 //!   spike-mac-drive type <text>            type lowercase ascii, digits and spaces
 //!   spike-mac-drive key <vk> [cmd|ctrl|opt|shift]...   press a key with modifiers
 
@@ -176,6 +177,29 @@ mod mac {
                     num(1) as i32,
                 ));
             },
+            Some("trackpad") => {
+                let (points, n) = (num(1), num(2) as usize);
+                // Fields: continuous, scroll phase, momentum phase, point delta (axis 1).
+                let scroll = |dy: f64, phase: i64, momentum: i64| unsafe {
+                    // kCGScrollEventUnitPixel = 0
+                    let e = CGEventCreateScrollWheelEvent(std::ptr::null_mut(), 0, 1, dy as i32);
+                    CGEventSetIntegerValueField(e, 88, 1);
+                    CGEventSetIntegerValueField(e, 99, phase);
+                    CGEventSetIntegerValueField(e, 123, momentum);
+                    CGEventSetDoubleValueField(e, 96, dy);
+                    post(e);
+                };
+                scroll(0.0, 1, 0);
+                for _ in 0..n {
+                    scroll(points, 2, 0);
+                }
+                scroll(0.0, 4, 0);
+                scroll(points, 0, 1);
+                for i in 1..5 {
+                    scroll(points / (i + 1) as f64, 0, 2);
+                }
+                scroll(0.0, 0, 3);
+            }
             Some("type") => {
                 for c in args[1].chars() {
                     if let Some(code) = vk(c) {

@@ -15,6 +15,8 @@ use std::collections::HashSet;
 pub struct Edge {
     pub display: String,
     pub side: mousetail_core::layout::Side,
+    /// Where that display is, in this machine's logical coordinates.
+    pub rect: mousetail_core::layout::Rect,
 }
 
 #[cfg(target_os = "macos")]

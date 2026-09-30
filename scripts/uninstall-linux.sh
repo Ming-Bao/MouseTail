@@ -21,5 +21,13 @@ if [[ -d $omarchy ]]; then
 fi
 
 rm -rf "${XDG_STATE_HOME:-$HOME/.local/state}/mousetail"
+rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/mousetail"
 [[ ${1:-} == --forget ]] && rm -rf "$config_home/mousetail"
 echo "MouseTail removed."
+# enable-input.sh changed system settings (with your password), so undoing it needs it too.
+rule=/etc/udev/rules.d/60-mousetail-uinput.rules
+modules=/etc/modules-load.d/mousetail-uinput.conf
+if [[ -e $rule || -e $modules ]]; then
+  echo "To also undo enable-input.sh (asks for your password):"
+  echo "    sudo rm -f $rule $modules"
+fi

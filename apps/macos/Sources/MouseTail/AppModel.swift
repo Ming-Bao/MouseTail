@@ -29,13 +29,19 @@ final class AppModel: ObservableObject {
 
     func refresh() async {
         do {
-            let s = try await client.decode(Status.self, ["cmd": "status"])
+            var s = try await client.decode(Status.self, ["cmd": "status"])
+            // Round-trip times jitter every poll; only whole milliseconds are shown, so only
+            // those should redraw the menu.
+            for i in s.peers.indices {
+                s.peers[i].rttMs = s.peers[i].rttMs?.rounded()
+            }
             if s != status { status = s }
-            problem = nil
+            if problem != nil { problem = nil }
             Updater.shared.statusChanged(s)
         } catch {
             status = nil
             problem = error.localizedDescription
+            Updater.shared.daemonUnavailable()
             await daemon.ensureRunning()
         }
     }

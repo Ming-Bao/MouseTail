@@ -13,6 +13,8 @@ final class Updater: NSObject, ObservableObject, SPUUpdaterDelegate {
     /// Sparkle's "install now" for a downloaded update, held until this Mac is free.
     private var pendingInstall: (() -> Void)?
     private var lastNudge: Date?
+    /// When the daemon stopped answering, if it has.
+    private var daemonDownSince: Date?
 
     override init() {
         super.init()
@@ -37,8 +39,21 @@ final class Updater: NSObject, ObservableObject, SPUUpdaterDelegate {
         controller?.checkForUpdates(nil)
     }
 
+    /// Called when the daemon doesn't answer. Nobody can be using another computer through
+    /// this Mac then, and the update may well be the fix, so install once it's clearly down
+    /// rather than just restarting.
+    func daemonUnavailable() {
+        let since = daemonDownSince ?? Date()
+        daemonDownSince = since
+        if -since.timeIntervalSinceNow > 30, let install = pendingInstall {
+            pendingInstall = nil
+            install()
+        }
+    }
+
     /// Called with each new status from the daemon.
     func statusChanged(_ status: Status?) {
+        daemonDownSince = nil
         guard let status, let updater = controller?.updater else { return }
         let inUse = status.controlling != nil || status.controlledBy != nil
         if !inUse, let install = pendingInstall {

@@ -29,6 +29,9 @@ impl VirtualSpeaker {
     /// output. PCM arrives on the returned channel in whatever chunk sizes PipeWire uses.
     pub fn start(id: &str, description: &str) -> anyhow::Result<(Self, mpsc::Receiver<Vec<i16>>)> {
         let node_name = format!("mousetail.{id}");
+        // Before the speaker exists: PipeWire may make it the default as soon as it appears
+        // (it remembers it from last time), and then there'd be nothing to go back to.
+        let previous_default = default_sink().filter(|s| *s != node_name);
         let (pcm_tx, pcm_rx) = mpsc::channel();
         let (quit_tx, quit_rx) = pw::channel::channel::<()>();
         let (ready_tx, ready_rx) = mpsc::channel();
@@ -43,7 +46,6 @@ impl VirtualSpeaker {
             })?;
         ready_rx.recv().context("audio thread died")??;
 
-        let previous_default = default_sink().filter(|s| *s != node_name);
         // The node takes a moment to appear in the graph.
         for _ in 0..20 {
             if set_default_sink(&node_name) {

@@ -23,7 +23,6 @@ planned; the platform layer has room for it.
 ## Non-goals (v1)
 
 - More than one remote machine at a time (the model supports it; the UI won't at first).
-- Controlling the Mac from Linux (designed for, not built).
 - File drag-and-drop between machines.
 - Internet / cross-subnet use.
 
@@ -185,8 +184,13 @@ at the Omarchy lock screen):
 
 ## Clipboard
 
-- On crossing, the machine being **left** sends its clipboard to the machine being entered, if it
-  has changed since the last sync. (Nothing is sent continuously.)
+- On crossing, the machine being **left** sends its clipboard to the machine being entered,
+  unless that machine already has it. (Nothing is sent continuously.)
+- Each clipboard goes on a QUIC stream of its own, so a big one doesn't hold up the clicks and
+  keys that follow the crossing. The receiver answers once it has decided, and the sender only
+  counts it as delivered if it was taken; otherwise it goes again next crossing. It can
+  arrive before the `Enter` it belongs to, so the receiver waits up to 2 s for that. Peers
+  before protocol 5 get it inline on the main stream.
 - macOS: `NSPasteboard.changeCount` to detect changes; read/write text, then images (PNG) and
   file URLs later.
 - Linux: data-control (`wl-clipboard-rs`) to read/set the clipboard without a window. Omarchy
@@ -209,16 +213,18 @@ app) and uses the system library on Linux.
 
 ## Discovery and pairing
 
-- Each node advertises `_mousetail._tcp` via mDNS with its device id and name.
+- Each node advertises `_mousetail._udp` via mDNS with its device id and name.
 - Each device has a long-term self-signed certificate (its identity).
 - First connection: the target shows a notification with a 4-digit code; the user enters it in
   the Mac's menu. The code authenticates an exchange of certificate fingerprints (SPAKE2), after
   which both sides pin each other's certificate.
-- Each shown code allows one attempt. Every attempt counts against a machine-wide limit (3
-  per 10 minutes, refunded on success) and codes are shown at most every 5 s, so guessing a
-  4-digit code takes weeks, with a notification on screen for every try.
+- Each shown code allows one attempt, and only the newest code is live (a new request cancels
+  the last, whoever asked). Every attempt counts against a machine-wide limit (3 per 10
+  minutes, refunded on success, checked both when a code is shown and when it's used) and
+  codes are shown at most every 5 s, so guessing a 4-digit code takes weeks, with a
+  notification on screen for every try.
 - Subsequent connections: mutual TLS with the pinned certificates. Unknown peers are rejected.
-- Unpair from either side.
+- Unpairing on either computer unpairs both (`NotPaired`).
 
 ### Who connects to whom
 
@@ -235,7 +241,8 @@ practice the iMac dials the Mac and the Omarchy install needs no firewall change
     pointer rests, its final position is re-sent twice so a lost last packet can't leave the
     remote cursor short. (Measured on
     this mesh Wi-Fi: 5 ms average, occasional multi-second stalls.)
-  - Keys, buttons, scroll, clipboard, control: reliable **streams**.
+  - Keys, buttons, scroll, control: one reliable **stream**; each clipboard: a stream of
+    its own.
 - One QUIC endpoint per local IPv4 address, all on one port, rebound as networks change. A
   single wildcard socket would answer from the primary (Wi-Fi) address even when the peer
   dialled the Ethernet address, and stateful firewalls drop those replies.
@@ -257,7 +264,7 @@ practice the iMac dials the Mac and the Omarchy install needs no firewall change
 
 **Omarchy**
 - `curl -fsSL …/install.sh | sh` (AUR package later). **No sudo:** installs the binary to
-  `~/.local/bin`, enables `mousetaild.service` (`systemctl --user`, bound to
+  `~/.local/bin`, enables `mousetail.service` (`systemctl --user`, bound to
   `graphical-session.target`), and installs the bar plugin into `~/.config/omarchy/plugins/`.
 - Starts with the Hyprland session; restarts on failure. `mousetail status` CLI for debugging.
 
@@ -279,14 +286,19 @@ practice the iMac dials the Mac and the Omarchy install needs no firewall change
 - Discovery advertises each computer's version (TXT `app`); seeing a newer one prompts a check
   right away, so paired computers don't stay on different releases for long.
 - Releases must never break talking to the previous release: the protocol only gains things
-  older peers can ignore, until both sides have had time to update.
+  older peers can ignore, until both sides have had time to update. New information goes in
+  new message kinds at the end of `Message`/`Datagram` (older peers skip frames they can't
+  decode), never in new fields on existing messages; peers at or above
+  `MIN_PROTOCOL_VERSION` are accepted (see `crates/core/src/proto.rs`).
 
 ## Local control socket
 
 `$XDG_RUNTIME_DIR/mousetail.sock` (Linux) or `~/Library/Application Support/MouseTail/
 mousetail.sock` (macOS), mode 0600. Requests: `status`, `layout`, `pair`, `pair_code`,
-`unpair`, `place_at` (drop + snap), `place`, `set_setting`, `release`. `mousetail watch`
-streams status as JSON lines for status bars.
+`unpair`, `place_at` (drop + snap), `place`, `set_setting`, `release`, `update`, `shutdown`.
+`mousetail watch` streams status as JSON lines for status bars. Only one daemon runs per user
+(a lock on `mousetail.lock` beside the config); the Mac app starts its own with
+`--exit-with-parent` so it stops with the app, crash or not.
 
 ## Milestones
 

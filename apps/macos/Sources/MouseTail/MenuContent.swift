@@ -89,9 +89,11 @@ struct MenuContent: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(nsImage: NSApp.applicationIconImage)
+            // The mouse-only logo: the menu is its background.
+            Image(nsImage: NSImage(named: "LogoMouse") ?? NSApp.applicationIconImage)
                 .resizable()
-                .frame(width: 34, height: 34)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 44, height: 34)
             VStack(alignment: .leading, spacing: 1) {
                 Text("MouseTail").font(.system(size: 14, weight: .semibold))
                 Text(summary).font(.caption).foregroundStyle(.secondary)

@@ -44,7 +44,8 @@ cp "$bin/MouseTail" "$app/Contents/MacOS/MouseTail"
 ditto "$bin/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.framework"
 # Lower-case "mousetail" would clash with "MouseTail" on a case-insensitive disk.
 cp "$daemon" "$app/Contents/MacOS/mousetaild"
-cp apps/macos/Resources/AppIcon.icns apps/macos/Resources/MenuBarIcon*.png "$app/Contents/Resources/"
+cp apps/macos/Resources/AppIcon.icns apps/macos/Resources/MenuBarIcon*.png apps/macos/Resources/LogoMouse.svg \
+  "$app/Contents/Resources/"
 
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

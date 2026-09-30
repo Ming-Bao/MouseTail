@@ -34,7 +34,7 @@ img { display: block; }
   border: 1px solid var(--line); box-shadow: 0 .75rem 2rem rgba(0, 0, 0, .35);
 }
 .nav-brand { display: flex; align-items: center; gap: .6rem; font-weight: 500; font-size: 1.05rem; letter-spacing: -.01em; }
-.nav-brand img { width: 1.75rem; height: 1.75rem; border-radius: .45rem; }
+.nav-brand img { height: 1.6rem; width: auto; }
 .nav-links { display: flex; gap: 1.8rem; font-size: .95rem; color: var(--muted); }
 .nav-links a:hover { color: var(--text); }
 

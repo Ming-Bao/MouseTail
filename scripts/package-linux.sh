@@ -19,14 +19,16 @@ cp scripts/enable-input-linux.sh "$out/enable-input.sh"
 cp -r integrations/omarchy/nz.galengreen.mousetail "$out/omarchy-plugin/"
 cp LICENSE "$out/"
 cat > "$out/README.txt" <<'TXT'
-MouseTail for Linux (Wayland: Hyprland / Omarchy)
+MouseTail for Linux (Wayland)
 
   ./install.sh        install for your user (no sudo) and start it with your desktop
   ./uninstall.sh      remove it again
   ./enable-wake.sh    optional: let other computers wake this one from sleep (asks for sudo)
   ./enable-input.sh   only if MouseTail says so (GNOME, KDE): allow it to control this computer
 
-Then open MouseTail on your Mac and click Pair. https://github.com/galengreen/mousetail
+Then pair: click Pair… in MouseTail on the other computer, or run: mousetail pair
+MouseTail keeps itself up to date (mousetail set updates off to stop that).
+https://github.com/galengreen/mousetail
 TXT
 tar -C dist -czf "dist/$name.tar.gz" "$name"
 echo "built dist/$name.tar.gz"

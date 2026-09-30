@@ -1,6 +1,9 @@
 name: Release
 
 # Push a tag like v0.1.0 to build MouseTail for Mac and Linux and publish a GitHub release.
+# Every download is signed with the release key (secret UPDATE_SIGNING_KEY), and the release
+# carries latest.json (Linux) and appcast.xml (Mac, for Sparkle), which installed copies check
+# to update themselves.
 on:
   push:
     tags: ["v*"]
@@ -10,7 +13,18 @@ permissions:
   contents: write
 
 jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag matches Cargo.toml's version
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          [[ "$GITHUB_REF_NAME" == "v$version" ]] || { echo "tag $GITHUB_REF_NAME but Cargo.toml says $version"; exit 1; }
+
   linux:
+    needs: check
     strategy:
       matrix:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
@@ -27,17 +41,38 @@ jobs:
           path: dist/*.tar.gz
 
   macos:
+    needs: check
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
+      # Sign with the same certificate every time, so macOS keeps MouseTail's permissions
+      # across updates.
+      - name: Signing certificate
+        env:
+          P12: ${{ secrets.MAC_CERT_P12 }}
+          PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: |
+          kc=$RUNNER_TEMP/signing.keychain-db
+          security create-keychain -p ci "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p ci "$kc"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
       - run: scripts/package-mac.sh
+      - name: The app is signed with the release certificate
+        run: codesign -dr - dist/MouseTail.app 2>&1 | grep -q 'certificate leaf = H"bbedfafe07206a1e8e8362c1b56dcfdee72d35c6"'
       - uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: dist/MouseTail-macos.dmg
+          path: |
+            dist/MouseTail-macos.dmg
+            dist/MouseTail-macos.zip
 
   publish:
     needs: [linux, macos]
@@ -48,6 +83,10 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Sign the downloads and write the update feeds
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: scripts/write-update-feeds.sh
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}

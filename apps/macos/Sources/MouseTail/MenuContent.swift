@@ -5,6 +5,7 @@ import SwiftUI
 /// want to change.
 struct MenuContent: View {
     @EnvironmentObject var model: AppModel
+    @ObservedObject private var updater = Updater.shared
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -48,11 +49,24 @@ struct MenuContent: View {
                     get: { model.openAtLogin },
                     set: { model.openAtLogin = $0 }
                 ))
+                if updater.available {
+                    Toggle("Update automatically", isOn: Binding(
+                        get: { updater.automatic },
+                        set: { updater.automatic = $0 }
+                    ))
+                }
             } else {
                 Text(model.problem ?? "Starting…")
                     .foregroundStyle(.secondary)
             }
             Divider()
+            if updater.available {
+                Button("Check for Updates…") {
+                    NSApp.activate()
+                    updater.checkForUpdates()
+                }
+                .buttonStyle(.plain)
+            }
             Button("Quit MouseTail") { NSApp.terminate(nil) }
                 .buttonStyle(.plain)
                 .keyboardShortcut("q")

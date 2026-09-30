@@ -26,6 +26,7 @@ use mousetail_core::proto::{
     self, Datagram, DisplayInfo, Hello, Message, Motion, PROTOCOL_VERSION, Platform,
 };
 use mousetail_core::quinn::{Connection, Endpoint};
+use mousetail_core::update;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot, watch};
 use tracing::{debug, info, warn};
@@ -120,6 +121,8 @@ pub struct Node {
     audio_out: Mutex<Option<(String, usize, platform::AudioSource)>>,
     /// Ourselves, for handing work to background threads from `&self` methods.
     me: OnceLock<std::sync::Weak<Node>>,
+    /// Keeps this machine up to date (Linux; the Mac app updates itself).
+    pub updater: crate::update::Updater,
 }
 
 #[derive(Clone)]
@@ -202,6 +205,7 @@ impl Node {
             player: platform::AudioPlayer::start().ok(),
             audio_out: Mutex::new(None),
             me: OnceLock::new(),
+            updater: Default::default(),
         });
         info!(
             "MouseTail {} as {name:?} ({id}) on UDP {port}",
@@ -226,6 +230,7 @@ impl Node {
         tokio::spawn(node.clone().settle_loop());
         tokio::spawn(node.clone().display_loop());
         tokio::spawn(crate::ipc::serve(node.clone(), paths.socket.clone()));
+        tokio::spawn(crate::update::run(node.clone()));
 
         shutdown_signal().await;
         info!("shutting down");
@@ -381,7 +386,14 @@ impl Node {
                         entry.failures = 0;
                         entry.next_attempt = Instant::now();
                     }
+                    let newer = found
+                        .version
+                        .as_deref()
+                        .is_some_and(|v| update::is_newer(v, update::VERSION));
                     entry.found = found;
+                    if newer {
+                        self.updater.nudge();
+                    }
                 }
                 discovery::Event::Lost(id) => {
                     debug!("{id} stopped advertising");
@@ -1371,6 +1383,7 @@ impl Node {
                     "rtt_ms": conn.map(|p| p.conn.rtt().as_secs_f64() * 1000.0),
                     "platform": conn.map(|p| p.hello.platform),
                     "placement": config.peer(id).and_then(|p| p.placement),
+                    "version": discovered.get(id).and_then(|d| d.found.version.clone()),
                 })
             })
             .collect();
@@ -1403,6 +1416,8 @@ impl Node {
             "controlled_by": controlled_by,
             "settings": config.settings,
             "peers": list,
+            "version": update::VERSION,
+            "update": self.updater.status(),
         })
     }
 
@@ -1594,9 +1609,19 @@ impl Node {
         self.update_config(|c| match (key, value) {
             ("clipboard", Value::Bool(b)) => c.settings.clipboard = *b,
             ("audio", Value::Bool(b)) => c.settings.audio = *b,
+            ("updates", Value::Bool(b)) => c.settings.updates = *b,
             _ => result = Err(format!("unknown setting {key:?}")),
         });
         result
+    }
+
+    /// Someone is using another computer through this one, or this one from another.
+    pub fn in_use(&self) -> bool {
+        self.controller.lock().unwrap().active_peer().is_some()
+            || self
+                .target
+                .get()
+                .is_some_and(|t| t.lock().unwrap().active.is_some())
     }
 
     pub fn release(&self) {

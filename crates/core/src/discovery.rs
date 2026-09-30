@@ -7,6 +7,7 @@ use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use tokio::sync::mpsc;
 
 use crate::proto::PROTOCOL_VERSION;
+use crate::update;
 
 pub const SERVICE_TYPE: &str = "_mousetail._udp.local.";
 
@@ -15,6 +16,8 @@ pub struct Found {
     pub id: String,
     pub name: String,
     pub addrs: Vec<SocketAddr>,
+    /// The MouseTail release it runs (older releases don't say).
+    pub version: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -49,7 +52,12 @@ pub fn start(
         &format!("{host}.local."),
         "",
         port,
-        &[("id", id), ("name", name), ("v", version.as_str())][..],
+        &[
+            ("id", id),
+            ("name", name),
+            ("v", version.as_str()),
+            ("app", update::VERSION),
+        ][..],
     )?
     .enable_addr_auto();
     daemon.register(info)?;
@@ -79,8 +87,14 @@ pub fn start(
                             .filter(usable)
                             .map(|ip| SocketAddr::new(ip, port))
                             .collect();
+                        let version = info.get_property_val_str("app").map(str::to_string);
                         names.insert(info.get_fullname().to_string(), id.clone());
-                        Event::Found(Found { id, name, addrs })
+                        Event::Found(Found {
+                            id,
+                            name,
+                            addrs,
+                            version,
+                        })
                     }
                     ServiceEvent::ServiceRemoved(_, fullname) => match names.remove(&fullname) {
                         Some(id) => Event::Lost(id),

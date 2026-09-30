@@ -251,14 +251,35 @@ practice the iMac dials the Mac and the Omarchy install needs no firewall change
 
 **macOS**
 - `MouseTail.app` into /Applications (DMG or Homebrew cask later). Launch-at-login via
-  `SMAppService`. Ad-hoc signed for now; a Developer ID later stops macOS from asking for the
-  permissions again after updates.
+  `SMAppService`. Signed with a self-signed "MouseTail Release" certificate, the same one every
+  release, so macOS keeps its permissions across updates (it isn't notarised, so the very first
+  open still needs **Open Anyway**; a Developer ID would remove that).
 
 **Omarchy**
 - `curl -fsSL …/install.sh | sh` (AUR package later). **No sudo:** installs the binary to
   `~/.local/bin`, enables `mousetaild.service` (`systemctl --user`, bound to
   `graphical-session.target`), and installs the bar plugin into `~/.config/omarchy/plugins/`.
 - Starts with the Hyprland session; restarts on failure. `mousetail status` CLI for debugging.
+
+### Updates
+
+- One Ed25519 release key signs every download. Only the release workflow has it (secret
+  `UPDATE_SIGNING_KEY`); its public half is `PUBLIC_KEY` in `crates/core/src/update.rs` and
+  `SUPublicEDKey` in the app. `scripts/write-update-feeds.sh` signs each release and checks the
+  signatures against that public key, so a mismatched key fails the release.
+- Each release carries `appcast.xml` (for the Mac) and `latest.json` (Linux), fetched through
+  GitHub's `releases/latest/download/…` links, so there's no server of our own.
+- **Mac:** Sparkle checks every six hours, downloads in the background, verifies the signature
+  and installs by relaunching the app, but holds the install until nobody is using another
+  computer through this Mac.
+- **Linux:** the daemon does the same (`crates/mousetail/src/update.rs`): verify, unpack, test-run
+  the new binary's `--version`, wait until idle, swap the binary and bar plugin by renaming,
+  keep the old binary in `~/.local/state/mousetail/mousetail.previous`, then `exec` the new one
+  so the systemd service carries straight on. Only installer-made installs update themselves.
+- Discovery advertises each computer's version (TXT `app`); seeing a newer one prompts a check
+  right away, so paired computers don't stay on different releases for long.
+- Releases must never break talking to the previous release: the protocol only gains things
+  older peers can ignore, until both sides have had time to update.
 
 ## Local control socket
 

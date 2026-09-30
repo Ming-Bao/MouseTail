@@ -32,6 +32,7 @@ final class AppModel: ObservableObject {
             let s = try await client.decode(Status.self, ["cmd": "status"])
             if s != status { status = s }
             problem = nil
+            Updater.shared.statusChanged(s)
         } catch {
             status = nil
             problem = error.localizedDescription

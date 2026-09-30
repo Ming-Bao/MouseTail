@@ -45,6 +45,8 @@ pub struct Settings {
     /// Share sound: a machine with speakers plays the other's sound; a machine without
     /// sends it. Off here means neither.
     pub audio: bool,
+    /// Install new releases automatically (Linux; the Mac app has its own setting).
+    pub updates: bool,
 }
 
 impl Default for Settings {
@@ -53,6 +55,7 @@ impl Default for Settings {
             clipboard: true,
             clipboard_max_bytes: 10 * 1024 * 1024,
             audio: true,
+            updates: true,
         }
     }
 }

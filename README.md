@@ -83,6 +83,12 @@ on Linux, run `mousetail pair`. Type the code the other computer shows. Then put
 your desk: **Arrange Displays…** on a Mac, or `mousetail place <computer> left` on Linux. Both
 computers share one arrangement, so you only do this once.
 
+**Updates** install themselves. MouseTail checks for a new release every few hours (and
+straight away if another computer already has it, so the two stay compatible), and installs
+it once you're not using another computer through it. Turn it off with **Update
+automatically** in the Mac menu, or `mousetail set updates off` on Linux; `mousetail update`
+installs the latest now.
+
 ## Privacy and security
 
 - MouseTail only talks to computers on your local network, directly. There's no account, server
@@ -93,6 +99,9 @@ computers share one arrangement, so you only do this once.
   code allows one attempt and repeated wrong codes lock pairing for a while.
 - Keystrokes are only sent while the cursor is on the other computer. macOS blocks this
   entirely while a password field has Secure Input on; MouseTail tells you when that happens.
+- Updates come from this repository's GitHub releases and are signed with MouseTail's release
+  key; anything without a valid signature is refused. The only other thing MouseTail fetches
+  is that update check.
 
 Found a security problem? Please open a private
 [security advisory](https://github.com/galengreen/mousetail/security/advisories/new) rather than
@@ -108,7 +117,8 @@ mousetail status                      what's connected, and where the cursor is
 mousetail pair [computer]             pair (the other computer shows a code to type here)
 mousetail unpair <computer>           forget a computer
 mousetail place <computer> <side> [n] put it left/right/above/below display n
-mousetail set <clipboard|audio> <on|off>
+mousetail set <clipboard|audio|updates> <on|off>
+mousetail update                      install the latest release now (Linux)
 mousetail release                     bring the cursor home
 mousetail watch                       status as JSON lines, for status bars
 ```

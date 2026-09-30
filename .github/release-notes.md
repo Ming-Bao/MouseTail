@@ -1,13 +1,10 @@
 ## What's new
 
-- **Kiore is now MouseTail**, with a new icon. Existing installs keep their pairings and
-  arrangement: install MouseTail on both computers and they reconnect. On Linux the installer
-  removes the old Kiore service; on a Mac, delete Kiore from Applications and allow MouseTail's
-  permissions when asked.
-- **Any computer can control any other**: Mac → Linux, Linux → Mac, Mac → Mac and Linux → Linux.
-  Linux can now be the main computer.
-- Works beyond Omarchy: Sway and other wlroots desktops, and KDE and GNOME as the computer
-  being controlled (some still experimental).
+- **MouseTail now keeps itself up to date**, on Mac and Linux. New releases are signed, checked,
+  and installed while you're not using another computer; turn it off in the Mac menu or with
+  `mousetail set updates off`. Install this release by hand once on each computer and the
+  rest arrive by themselves.
+- A new menu bar icon, also used in the Omarchy bar.
 
 ## Install
 

@@ -10,6 +10,7 @@ pub mod layout;
 pub mod net;
 pub mod pairing;
 pub mod proto;
+pub mod update;
 
 /// Re-exported so front ends use the same QUIC version.
 pub use quinn;

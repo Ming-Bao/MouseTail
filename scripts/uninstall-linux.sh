@@ -20,5 +20,6 @@ if [[ -d $omarchy ]]; then
   fi
 fi
 
+rm -rf "${XDG_STATE_HOME:-$HOME/.local/state}/mousetail"
 [[ ${1:-} == --forget ]] && rm -rf "$config_home/mousetail"
 echo "MouseTail removed."

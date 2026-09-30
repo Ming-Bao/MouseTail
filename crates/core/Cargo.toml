@@ -10,6 +10,7 @@ anyhow.workspace = true
 serde.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+base64 = "0.22"
 bytes = "1"
 hex = "0.4"
 if-addrs = "0.15"
@@ -18,11 +19,15 @@ mdns-sd = "0.21"
 postcard = { version = "1", features = ["use-std"] }
 quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring", "log"] }
 rand = "0.8"
+ring = "0.17"
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging"] }
 sha2 = "0.10"
 spake2 = "0.4"
 toml = "0.9"
+
+[dev-dependencies]
+serde_json = "1"
 
 # Opus: built in on macOS so the app is self-contained; the system library elsewhere.
 [target.'cfg(target_os = "macos")'.dependencies]

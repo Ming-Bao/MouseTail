@@ -64,6 +64,7 @@ struct PeerStatus: Codable, Identifiable, Equatable {
     var address: String?
     var rttMs: Double?
     var platform: String?
+    var version: String?
 }
 
 /// A code this Mac is showing because another computer asked to pair.

@@ -49,6 +49,8 @@ pub enum Request {
     },
     /// Bring the cursor home.
     Release,
+    /// Look for a new release now and install it.
+    Update,
 }
 
 pub async fn serve(node: Arc<Node>, path: PathBuf) {
@@ -85,7 +87,7 @@ pub async fn serve(node: Arc<Node>, path: PathBuf) {
     }
 }
 
-async fn handle(node: &Node, req: Request) -> Value {
+async fn handle(node: &Arc<Node>, req: Request) -> Value {
     let result: Result<Value, String> = match req {
         Request::Status => Ok(node.status()),
         Request::Pair { peer } => node.resolve_peer(peer.as_deref(), true).map(|id| {
@@ -118,6 +120,17 @@ async fn handle(node: &Node, req: Request) -> Value {
             node.release();
             Ok(json!({}))
         }
+        Request::Update => match crate::update::check(node).await {
+            Ok(crate::update::Checked::UpToDate) => Ok(
+                json!({"message": format!("MouseTail {} is up to date.", mousetail_core::update::VERSION)}),
+            ),
+            Ok(crate::update::Checked::Installing(v)) => Ok(json!({"message": if node.in_use() {
+                format!("MouseTail {v} is ready; it installs as soon as this computer is free.")
+            } else {
+                format!("Installing MouseTail {v}; it restarts in a moment.")
+            }})),
+            Err(e) => Err(format!("{e:#}")),
+        },
     };
     match result {
         Ok(mut v) => {

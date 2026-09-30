@@ -4,6 +4,7 @@ mod ipc;
 mod node;
 mod paths;
 mod platform;
+mod update;
 
 use std::io::Write;
 
@@ -24,8 +25,10 @@ Usage:
   mousetail place <machine> <side> [n]  Put a machine left/right/above/below display n
                                         (default: the main display)
   mousetail release                     Bring the cursor back to this machine
-  mousetail set <clipboard|audio> <on|off>  Change a setting
+  mousetail set <clipboard|audio|updates> <on|off>  Change a setting
+  mousetail update                      Install the latest release now (Linux)
   mousetail watch                       Print status as JSON, one line per change
+  mousetail --version                   Show the version
 ";
 
 #[tokio::main]
@@ -91,7 +94,7 @@ async fn run() -> anyhow::Result<()> {
         }
         "set" => {
             let key = arg(1)
-                .context("which setting? (clipboard, audio)")?
+                .context("which setting? (clipboard, audio, updates)")?
                 .to_string();
             let value = match arg(2).context("on or off?")? {
                 "on" | "true" | "yes" => serde_json::Value::Bool(true),
@@ -102,6 +105,20 @@ async fn run() -> anyhow::Result<()> {
             Ok(())
         }
         "watch" => watch(&paths).await,
+        "update" => {
+            if cfg!(target_os = "macos") {
+                anyhow::bail!(
+                    "on a Mac, MouseTail updates itself: MouseTail menu → Check for Updates"
+                );
+            }
+            let v = ipc::call(&paths.socket, &Request::Update).await?;
+            println!("{}", v["message"].as_str().unwrap_or("Done."));
+            Ok(())
+        }
+        "--version" | "-V" | "version" => {
+            println!("mousetail {}", mousetail_core::update::VERSION);
+            Ok(())
+        }
         "help" | "-h" | "--help" => {
             print!("{USAGE}");
             Ok(())

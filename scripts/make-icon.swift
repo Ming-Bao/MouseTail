@@ -1,4 +1,5 @@
-// Renders the artwork in assets/ into the app's icon, menu bar images and web images.
+// Renders the artwork in assets/ into the app's icon, the menu bar icon (also used by the
+// Omarchy bar plugin and the website) and the web images.
 //   swift scripts/make-icon.swift
 import AppKit
 
@@ -18,6 +19,26 @@ func render(_ file: String, _ px: Int, height: Int? = nil, inset: Double = 0) ->
     return rep.representation(using: .png, properties: [:])!
 }
 
+/// The SVG with its viewBox shrunk to the drawn artwork (plus a little room), and the
+/// artwork's width ÷ height.
+func trimmed(_ file: String) -> (String, Double) {
+    let svg = try! String(contentsOfFile: file, encoding: .utf8)
+    let match = svg.firstMatch(of: try! Regex(#"viewBox="([^"]*)""#))!
+    let box = match.output[1].substring!.split(separator: " ").map { Double($0)! }
+    let (w, h) = (Int(box[2]), Int(box[3]))
+    let bitmap = NSBitmapImageRep(data: render(file, w, height: h))!
+    var (minX, minY, maxX, maxY) = (w, h, 0, 0)
+    for y in 0..<h {
+        for x in 0..<w where bitmap.colorAt(x: x, y: y)!.alphaComponent > 0.02 {
+            (minX, minY, maxX, maxY) = (min(minX, x), min(minY, y), max(maxX, x), max(maxY, y))
+        }
+    }
+    let pad = Double(max(maxX - minX, maxY - minY)) * 0.02
+    let (bw, bh) = (Double(maxX - minX) + 2 * pad, Double(maxY - minY) + 2 * pad)
+    let viewBox = String(format: "%.1f %.1f %.1f %.1f", box[0] + Double(minX) - pad, box[1] + Double(minY) - pad, bw, bh)
+    return (svg.replacingOccurrences(of: String(match.output[0].substring!), with: "viewBox=\"\(viewBox)\""), bw / bh)
+}
+
 let resources = URL(fileURLWithPath: "apps/macos/Resources")
 try! FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
 
@@ -35,11 +56,19 @@ task.arguments = ["-c", "icns", iconset.path, "-o", resources.appendingPathCompo
 try! task.run()
 task.waitUntilExit()
 
-// Menu bar (template images, 24 × 18 pt: the logo is wider than it is tall).
-for (svg, name) in [("assets/menubar.svg", "MenuBarIcon"), ("assets/menubar-active.svg", "MenuBarIconActive")] {
-    try! render(svg, 24, height: 18).write(to: resources.appendingPathComponent("\(name).png"))
-    try! render(svg, 48, height: 36).write(to: resources.appendingPathComponent("\(name)@2x.png"))
+// Menu bar icon: assets/menubar.svg, a black silhouette on a square canvas. Trim the empty
+// margin so it can be drawn at menu bar height, and share the trimmed artwork with the Omarchy
+// bar plugin and the website.
+let (iconSVG, aspect) = trimmed("assets/menubar.svg")
+for path in ["integrations/omarchy/nz.galengreen.mousetail/icon.svg", "website/menubar.svg"] {
+    try! iconSVG.write(toFile: path, atomically: true, encoding: .utf8)
 }
+let trimmedFile = NSTemporaryDirectory() + "menubar-trimmed.svg"
+try! iconSVG.write(toFile: trimmedFile, atomically: true, encoding: .utf8)
+let barHeight = 16  // points, like other menu bar icons
+let barWidth = Int((Double(barHeight) * aspect).rounded())
+try! render(trimmedFile, barWidth, height: barHeight).write(to: resources.appendingPathComponent("MenuBarIcon.png"))
+try! render(trimmedFile, barWidth * 2, height: barHeight * 2).write(to: resources.appendingPathComponent("MenuBarIcon@2x.png"))
 
 // Web and README artwork.
 try! render("assets/logo.png", 512).write(to: URL(fileURLWithPath: "assets/logo-512.png"))

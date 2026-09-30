@@ -1,11 +1,11 @@
 import QtQuick
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// MouseTail in the Omarchy bar: a mouse that lights up while another computer is connected,
-// and a panel showing who's connected, any pairing code, and the clipboard setting. Status
+// MouseTail in the Omarchy bar: the MouseTail icon, and a panel showing who's connected, any pairing code, and the clipboard setting. Status
 // streams from `mousetail watch`, one JSON line per change.
 Panel {
   id: root
@@ -13,7 +13,6 @@ Panel {
   ipcTarget: "nz.galengreen.mousetail"
 
   readonly property string binary: Quickshell.env("HOME") + "/.local/bin/mousetail"
-  readonly property string glyph: "󰍽"
 
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color dim: Qt.darker(foreground, 1.55)
@@ -29,7 +28,6 @@ Panel {
   readonly property bool clipboard: status.settings ? status.settings.clipboard === true : true
   readonly property bool audio: status.settings ? status.settings.audio !== false : true
   readonly property string macName: connectedPeers.length > 0 ? connectedPeers[0].name : "your Mac"
-  readonly property bool lit: running && connectedPeers.length > 0
 
   readonly property string summary: {
     if (!running) return "Not running"
@@ -100,10 +98,34 @@ Panel {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.glyph
-    opacity: root.lit ? 1.0 : 0.45
+    iconComponent: Component { LogoIcon {} }
     tooltipText: "MouseTail: " + root.summary
     onPressed: function(b) { root.toggle() }
+  }
+
+  // The MouseTail icon (icon.svg, made from the Mac's menu bar icon), tinted like the bar's text.
+  component LogoIcon: Item {
+    Image {
+      id: logoImage
+      anchors.centerIn: parent
+      width: parent.width * 1.3
+      height: parent.height
+      fillMode: Image.PreserveAspectFit
+      source: Qt.resolvedUrl("icon.svg")
+      sourceSize.width: Math.round(width * Screen.devicePixelRatio)
+      sourceSize.height: Math.round(height * Screen.devicePixelRatio)
+      // Kept as a hidden layer so the effect can sample it as a texture.
+      visible: false
+      layer.enabled: true
+    }
+
+    MultiEffect {
+      anchors.fill: logoImage
+      source: logoImage
+      brightness: 1.0
+      colorization: 1.0
+      colorizationColor: root.foreground
+    }
   }
 
   component SettingRow: Item {
@@ -163,13 +185,10 @@ Panel {
           meta: root.summary
           foreground: root.foreground
           fontFamily: root.fontFamily
-          iconOpacity: root.lit ? 1.0 : 0.5
           iconComponent: Component {
-            Text {
-              text: root.glyph
-              color: root.foreground
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.display
+            LogoIcon {
+              implicitWidth: Style.font.display * 1.5
+              implicitHeight: Style.font.display
             }
           }
         }

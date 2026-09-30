@@ -10,7 +10,7 @@ struct MouseTailApp: App {
         MenuBarExtra {
             MenuContent().environmentObject(model)
         } label: {
-            MenuBarIcon(active: model.status?.controlling != nil || model.status?.controlledBy != nil)
+            MenuBarIcon()
         }
         .menuBarExtraStyle(.window)
 
@@ -23,20 +23,17 @@ struct MouseTailApp: App {
     }
 }
 
-/// The logo as a silhouette: the trail is faint normally and lights up while the cursor is on
-/// another computer.
+/// The logo as a silhouette (assets/menubar.svg).
 struct MenuBarIcon: View {
-    let active: Bool
-
     var body: some View {
-        if let image = NSImage(named: active ? "MenuBarIconActive" : "MenuBarIcon") {
+        if let image = NSImage(named: "MenuBarIcon") {
             Image(nsImage: {
                 image.isTemplate = true
                 return image
             }())
         } else {
             // Running outside the app bundle (development).
-            Image(systemName: active ? "computermouse.fill" : "computermouse")
+            Image(systemName: "computermouse")
         }
     }
 }

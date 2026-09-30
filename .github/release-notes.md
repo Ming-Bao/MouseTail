@@ -1,5 +1,10 @@
 ## What's new
 
+- Nothing changes in how MouseTail works in this release. It comes with a new website, whose
+  demo shows the crossing ripple the way the app draws it.
+
+If you're coming from 0.2.2 or earlier, 0.2.3 brought:
+
 - A ripple spreads from the edge wherever the cursor crosses to or from another computer, so
   you can see where it went. Turn it off with **Ripple when crossing** in the menu (Mac) or
   the Omarchy panel, or `mousetail set ripple off`.
@@ -11,8 +16,8 @@
 - Only one cursor on show: the computer you've just left hides its own until you use its
   mouse again, rather than leaving it sitting at the edge.
 - Sound goes both ways: push from Linux onto a Mac and the Mac's sound comes to Linux too
-  (it needs the System Audio Recording permission). Your AirPods, media keys and the
-  desktop's play controls play, pause and skip whatever the other computer is playing.
+  (it needs the System Audio Recording permission). Headphone buttons, media keys and
+  the desktop's play controls play, pause and skip whatever the other computer is playing.
 - The Omarchy panel can now pair, arrange (drag computers to where they sit, like Arrange
   Displays on a Mac), change settings and check for updates.
 - MouseTail keeps itself up to date. If you're on 0.2.0 or earlier, install this release by

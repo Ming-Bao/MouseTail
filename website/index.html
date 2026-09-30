@@ -20,6 +20,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;1,6..72,400&display=swap">
   <link rel="stylesheet" href="style.css">
+  <link rel="preload" href="art/night.webp" as="image" type="image/webp">
   <script>document.documentElement.classList.add("js")</script>
 </head>
 <body>
@@ -51,44 +52,73 @@
       </div>
 
       <div class="stage">
-        <div class="demo" id="demo" role="img" aria-label="Demo: the cursor moves from a MacBook onto an iMac, pastes text copied on the Mac, and the iMac's sound plays through the Mac's headphones">
+        <div class="demo" id="demo" role="img" aria-label="Demo: the cursor moves from a MacBook onto an iMac running Omarchy, rippling where it crosses. It pastes text copied on the Mac, and the iMac's sound plays through the Mac's headphones.">
+          <div class="desk"></div>
           <div class="imac">
-            <div class="imac-body">
+            <div class="imac-display">
               <div class="screen imac-screen">
-                <div class="bar"><span class="ws">1</span><span class="ws on">2</span><span class="ws">3</span><span class="clock">10:42</span></div>
-                <div class="term" id="term">
-                  <div class="term-title">~ foot</div>
-                  <div class="term-body"><span class="prompt">❯</span> <span id="term-text"></span><span class="caret"></span></div>
+                <div class="waybar">
+                  <span class="wb-left"><span class="ws">1</span><span class="ws on">2</span><span class="ws">3</span></span>
+                  <span class="wb-clock">Wednesday 10:42</span>
+                  <span class="wb-right"><i></i><i></i><i></i></span>
                 </div>
+                <div class="tiles">
+                  <div class="tile term" id="term">
+                    <div class="tile-title">~ foot</div>
+                    <div class="term-body">
+                      <div class="dim"><span class="prompt">❯</span> fastfetch</div>
+                      <div class="dim">omarchy · Hyprland · 10:42</div>
+                      <div><span class="prompt">❯</span> <span id="term-text"></span><span class="caret"></span></div>
+                    </div>
+                  </div>
+                  <div class="tile player" id="player">
+                    <div class="tile-title">Now playing</div>
+                    <div class="track"><span class="art-dot"></span><div><strong>Night drive</strong><span>Late set</span></div></div>
+                    <div class="eq"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                  </div>
+                  <div class="tile files">
+                    <div class="tile-title">~/code</div>
+                    <div class="file-rows"><i></i><i></i><i></i><i></i></div>
+                  </div>
+                </div>
+                <canvas class="ripple-layer" id="ripple-imac"></canvas>
               </div>
-              <div class="imac-chin"></div>
             </div>
-            <div class="imac-stand"></div>
+            <div class="imac-chin"></div>
+            <div class="imac-neck"></div>
+            <div class="imac-foot"></div>
           </div>
           <div class="macbook">
             <div class="mac-lid">
               <div class="screen mac-screen">
-                <div class="menubar"><span></span><img src="menubar.svg" alt=""></div>
+                <div class="menubar"><span class="mb-app">Notes</span><span class="mb-right"><img src="menubar.svg" alt=""><span>Wed 10:42</span></span></div>
                 <div class="note" id="note">
-                  <div class="note-title">Notes</div>
-                  <div class="note-body"><span id="note-text">Kia ora from my Mac</span></div>
+                  <div class="note-title"><span class="lights"><i></i><i></i><i></i></span>Notes</div>
+                  <div class="note-body"><span id="note-text">Kia ora from my Mac</span><i class="line"></i><i class="line short"></i></div>
                 </div>
+                <canvas class="ripple-layer" id="ripple-mac"></canvas>
               </div>
+              <span class="notch"></span>
             </div>
-            <div class="mac-base"></div>
+            <div class="mac-base"><span></span></div>
             <div class="phones" id="phones" aria-hidden="true">
               <svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0 1 16 0v2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><rect x="3" y="13" width="4" height="7" rx="2" fill="currentColor"/><rect x="17" y="13" width="4" height="7" rx="2" fill="currentColor"/></svg>
             </div>
           </div>
-          <div class="edge-glow" id="glow-mac"></div>
-          <div class="edge-glow" id="glow-imac"></div>
           <div class="keycap" id="keycap"></div>
           <div class="notes" id="notes"></div>
           <svg class="cursor" id="cursor" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 8-6 1.6L10.4 19z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg>
         </div>
+        <div class="steps" role="group" aria-label="Jump to a step of the demo">
+          <button class="step" type="button">Copy</button>
+          <button class="step" type="button">Cross</button>
+          <button class="step" type="button">Paste</button>
+          <button class="step" type="button">Sound</button>
+          <button class="step" type="button">Home</button>
+        </div>
+        <p class="caption" id="caption">Push off the edge…</p>
       </div>
     </div>
-    <p class="caption" id="caption">Push off the edge…</p>
   </header>
 
   <main>
@@ -130,8 +160,9 @@
       <div class="grid grid-3">
         <article class="card">
           <div class="art art-stuck">
-            <div class="lock"><svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg><span>Locked</span></div>
-            <div class="home-arrow"><svg class="i" viewBox="0 0 16 16"><path d="M3 8h10m0 0L9 4m4 4-4 4"/></svg><span class="mono">cursor home</span></div>
+            <div class="lock"><svg viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg><span>omarchy is locked</span></div>
+            <div class="keys mono"><kbd>Ctrl</kbd><kbd>Option</kbd><kbd>Esc</kbd></div>
+            <div class="home-arrow"><svg class="i" viewBox="0 0 16 16"><path d="M13 8H3m0 0 4-4M3 8l4 4"/></svg><span class="mono">cursor comes home</span></div>
           </div>
           <div class="card-copy"><h3>Never gets stuck</h3><p>The computer you're sitting at stays in charge. A lock screen, a frozen computer or a Wi-Fi drop-out can't trap the cursor.</p></div>
         </article>
@@ -145,13 +176,14 @@
         <article class="card">
           <div class="art art-sound">
             <div class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-            <div class="sound-label mono">omarchy → AirPods Pro</div>
+            <div class="sound-label mono">omarchy → your headphones</div>
           </div>
-          <div class="card-copy"><h3>Sound comes too</h3><p>The computer you're sitting at plays the others' sound, AirPods included, and its play and pause buttons reach them too.</p></div>
+          <div class="card-copy"><h3>Sound comes too</h3><p>The computer you're sitting at plays the others' sound through whatever it's using, and its play and pause buttons reach them too.</p></div>
         </article>
         <article class="card">
           <div class="art art-keys">
-            <div class="maprow mono"><kbd>⌘ C</kbd><span class="dim">→</span><kbd>Super C</kbd></div>
+            <div class="maprow maphead mono"><span>Mac</span><span></span><span>Linux</span></div>
+            <div class="maprow mono"><kbd>⌘ C</kbd><span class="dim">→</span><kbd>Ctrl C</kbd></div>
             <div class="maprow mono"><kbd>⌘ T</kbd><span class="dim">→</span><kbd>Ctrl T</kbd></div>
             <div class="maprow mono"><kbd>⌘ Tab</kbd><span class="dim">→</span><kbd>Super Tab</kbd></div>
           </div>
@@ -159,36 +191,42 @@
         </article>
         <article class="card">
           <div class="art art-wake">
-            <div class="zzz mono">z<span>z</span><span>z</span></div>
-            <div class="sleepy"><img src="logo.png" alt=""></div>
+            <div class="wake-screen"><span class="zzz mono">z<span>z</span><span>z</span></span><span class="wake-clock">10:42</span></div>
+            <svg class="wake-cursor" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 8-6 1.6L10.4 19z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg>
           </div>
           <div class="card-copy"><h3>Wakes it up</h3><p>Move onto a dark or locked screen and it lights up. Push towards a sleeping computer to wake it.</p></div>
         </article>
         <article class="card">
           <div class="art art-path">
-            <div class="route"><span class="mono">Ethernet</span><div class="meter"><i style="width:28%"></i></div><span class="mono">3 ms</span></div>
-            <div class="route dim-route"><span class="mono">Wi-Fi</span><div class="meter"><i style="width:74%"></i></div><span class="mono">9 ms</span></div>
+            <div class="route"><span class="mono">Ethernet</span><div class="meter"><i style="width:27%"></i></div><span class="mono">7 ms</span><span class="picked mono">Using</span></div>
+            <div class="route dim-route"><span class="mono">Wi-Fi</span><div class="meter"><i style="width:100%"></i></div><span class="mono">26 ms</span><span></span></div>
           </div>
           <div class="card-copy"><h3>Fastest path, found for you</h3><p>Computers find each other on your network and pick the quickest connection. Wired beats Wi-Fi.</p></div>
         </article>
         <article class="card">
           <div class="art art-ripple">
-            <span class="ripple-edge"></span>
-            <span class="ring"></span><span class="ring"></span><span class="ring"></span>
+            <div class="half half-left"><span class="ring"></span><span class="ring"></span><span class="ring"></span></div>
+            <div class="half half-right"><span class="ring"></span><span class="ring"></span><span class="ring"></span></div>
+            <span class="ripple-edge edge-left"></span><span class="ripple-edge edge-right"></span>
             <svg class="ripple-cursor" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 8-6 1.6L10.4 19z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg>
           </div>
           <div class="card-copy"><h3>See where it went</h3><p>A ripple shows where the cursor crossed, and the computer you left hides its own until you come back.</p></div>
         </article>
         <article class="card">
           <div class="art art-scroll">
-            <div class="doc"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="doc"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
             <div class="pad"><span></span><span></span></div>
           </div>
           <div class="card-copy"><h3>Scrolls like it's local</h3><p>Two-finger scrolling from a Mac's trackpad glides on Linux, momentum and all.</p></div>
         </article>
         <article class="card">
           <div class="art art-pause">
-            <div class="pause-row"><span class="dot"></span><div><strong>omarchy</strong><span>Paused</span></div><span class="resume mono">Resume</span></div>
+            <div class="pause-row">
+              <span class="peer-icon"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="11.5" rx="1.6"/><path d="M9 20h6m-3-4v4"/></svg><span class="dot"></span></span>
+              <div><strong>omarchy</strong><span>Paused</span></div>
+              <span class="peer-btn" title="Resume omarchy"><svg viewBox="0 0 16 16"><path d="M5 3.5v9l7-4.5z"/></svg></span>
+              <span class="peer-btn more"><i></i><i></i><i></i></span>
+            </div>
           </div>
           <div class="card-copy"><h3>Pause, don't forget</h3><p>Stop sharing with a computer for a while, from either side. Resume and it picks up where it was.</p></div>
         </article>
@@ -204,7 +242,6 @@
           <li><svg class="i" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.8"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg><div><h3>Encrypted end to end</h3><p>Every connection uses TLS 1.3, with keys that never leave each computer.</p></div></li>
           <li><svg class="i" viewBox="0 0 16 16"><path d="M2.5 8a5.5 5.5 0 1 0 11 0 5.5 5.5 0 1 0-11 0M4.2 4.2l7.6 7.6"/></svg><div><h3>No account, no cloud</h3><p>Nothing to sign up for. MouseTail only ever talks to your own computers, apart from checking for updates.</p></div></li>
           <li><svg class="i" viewBox="0 0 16 16"><path d="M3 5.5h10M3 10.5h10M6 2.5l-1 11M11 2.5l-1 11"/></svg><div><h3>Paired with a code</h3><p>The code never crosses the network, and wrong guesses lock pairing for a while.</p></div></li>
-          <li><svg class="i" viewBox="0 0 16 16"><path d="M8 1.8 13 3.8v3.6c0 3-2.1 5.6-5 6.8-2.9-1.2-5-3.8-5-6.8V3.8z"/><path d="m5.8 8 1.6 1.6 3-3.2"/></svg><div><h3>Signed updates</h3><p>Updates come from GitHub and are refused unless they carry MouseTail's signature.</p></div></li>
         </ul>
       </div>
       <div class="split-art">
@@ -252,9 +289,9 @@
             <tr><th scope="row">Text<span class="row-note">Up to 10 MB</span></th><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s no">Not yet<sup><a href="#fn3">3</a></sup></span></td><td><span class="s planned">Planned</span></td></tr>
             <tr><th scope="row">Images and files</th><td><span class="s planned">Planned</span></td><td><span class="s planned">Planned</span></td><td><span class="s planned">Planned</span></td><td><span class="s planned">Planned</span></td><td><span class="s planned">Planned</span></td><td><span class="s planned">Planned</span></td></tr>
             <tr class="group"><th scope="rowgroup" colspan="7">Sound</th></tr>
-            <tr><th scope="row">Play another computer's sound<span class="row-note">Through whatever it's using, AirPods included</span></th><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s planned">Planned</span></td></tr>
+            <tr><th scope="row">Play another computer's sound<span class="row-note">Through whatever it's using, headphones included</span></th><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s planned">Planned</span></td></tr>
             <tr><th scope="row">Send its sound to the computer you're at</th><td><span class="s yes">Yes<sup><a href="#fn4">4</a></sup></span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s planned">Planned</span></td></tr>
-            <tr><th scope="row">Play, pause and skip from here<span class="row-note">AirPods, media keys and the desktop's controls</span></th><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes<sup><a href="#fn5">5</a></sup></span></td><td><span class="s yes">Yes<sup><a href="#fn5">5</a></sup></span></td><td><span class="s planned">Planned</span></td></tr>
+            <tr><th scope="row">Play, pause and skip from here<span class="row-note">Headphone buttons, media keys and the desktop's controls</span></th><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes<sup><a href="#fn5">5</a></sup></span></td><td><span class="s yes">Yes<sup><a href="#fn5">5</a></sup></span></td><td><span class="s planned">Planned</span></td></tr>
             <tr><th scope="row">Hear several computers at once<span class="row-note">Sound comes from one computer at a time</span></th><td><span class="s no">Not yet</span></td><td><span class="s no">Not yet</span></td><td><span class="s no">Not yet</span></td><td><span class="s no">Not yet</span></td><td><span class="s no">Not yet</span></td><td><span class="s planned">Planned</span></td></tr>
             <tr class="group"><th scope="rowgroup" colspan="7">Waking up</th></tr>
             <tr><th scope="row">Lights up a blanked or locked screen<span class="row-note">Closes Omarchy's screensaver too</span></th><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s planned">Planned</span></td></tr>

@@ -2,6 +2,7 @@
 """Draws the website's night-hills artwork (paper-cut layers, stars, moon).
 
     python3 scripts/make-night.py   → website/art/night.svg
+    scripts/render-night.sh         → the .webp images the site shows
 """
 import math
 import random

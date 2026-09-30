@@ -2,79 +2,82 @@ import AppKit
 import SwiftUI
 
 /// The menu bar popover: what's connected, where the cursor is, and the few things you might
-/// want to change.
+/// want to change. Laid out like the system's own menu bar panels.
 struct MenuContent: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject private var updater = Updater.shared
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 0) {
             header
+                .padding(.horizontal, 6)
+                .padding(.bottom, 10)
             if let status = model.status {
-                if !status.canControl {
-                    PermissionNotice(detail: status.captureError)
+                VStack(alignment: .leading, spacing: 8) {
+                    if !status.canControl {
+                        PermissionNotice(detail: status.captureError)
+                    }
+                    if status.controlling != nil && status.keyboardBlocked == true {
+                        Label("A password field on this Mac is blocking typing. The mouse still works.",
+                              systemImage: "keyboard.badge.exclamationmark")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                    if let shown = status.pairingCode {
+                        ShownCodePanel(shown: shown)
+                    }
                 }
-                if status.controlling != nil && status.keyboardBlocked == true {
-                    Label("A password field on this Mac is blocking typing. The mouse still works.",
-                          systemImage: "keyboard.badge.exclamationmark")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-                if let shown = status.pairingCode {
-                    ShownCodePanel(shown: shown)
-                }
-                Divider()
+                .padding(.bottom, 4)
+                MenuDivider()
+                SectionHeader("Computers")
                 machines(status)
                 if let pairing = model.pairing {
-                    PairingPanel(pairing: pairing)
+                    PairingPanel(pairing: pairing).padding(.top, 6)
                 }
-                Divider()
-                Button {
+                ActionRow("Arrange Displays…", systemImage: "rectangle.3.group") {
                     openWindow(id: "arrange")
                     NSApp.activate()
-                } label: {
-                    Label("Arrange Displays…", systemImage: "rectangle.3.group")
                 }
-                .buttonStyle(.plain)
-                Toggle(soundLabel(status), isOn: Binding(
+                MenuDivider()
+                SectionHeader("Settings")
+                SettingRow(soundLabel(status), systemImage: "speaker.wave.2", isOn: Binding(
                     get: { status.settings.audio ?? true },
                     set: { on in Task { await model.setAudio(on) } }
                 ))
-                Toggle("Share clipboard", isOn: Binding(
+                SettingRow("Share clipboard", systemImage: "doc.on.clipboard", isOn: Binding(
                     get: { status.settings.clipboard },
                     set: { on in Task { await model.setClipboard(on) } }
                 ))
-                Toggle("Open at login", isOn: Binding(
+                SettingRow("Open at login", systemImage: "power", isOn: Binding(
                     get: { model.openAtLogin },
                     set: { model.openAtLogin = $0 }
                 ))
                 if updater.available {
-                    Toggle("Update automatically", isOn: Binding(
+                    SettingRow("Update automatically", systemImage: "arrow.down.circle", isOn: Binding(
                         get: { updater.automatic },
                         set: { updater.automatic = $0 }
                     ))
                 }
             } else {
                 Text(model.problem ?? "Starting…")
+                    .font(.callout)
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
             }
-            Divider()
+            MenuDivider()
             if updater.available {
-                Button("Check for Updates…") {
+                ActionRow("Check for Updates…") {
                     NSApp.activate()
                     updater.checkForUpdates()
                 }
-                .buttonStyle(.plain)
             }
-            Button("Quit MouseTail") { NSApp.terminate(nil) }
-                .buttonStyle(.plain)
+            ActionRow("Quit MouseTail", shortcut: "⌘Q") { NSApp.terminate(nil) }
                 .keyboardShortcut("q")
         }
-        .toggleStyle(.switch)
-        .controlSize(.small)
-        .padding(14)
-        .frame(width: 300)
+        .padding(10)
+        .frame(width: 320)
     }
 
     private func soundLabel(_ status: Status) -> String {
@@ -83,10 +86,18 @@ struct MenuContent: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text("MouseTail").font(.headline)
+        HStack(spacing: 10) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 34, height: 34)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("MouseTail").font(.system(size: 14, weight: .semibold))
+                Text(summary).font(.caption).foregroundStyle(.secondary)
+            }
             Spacer()
-            Text(summary).font(.caption).foregroundStyle(.secondary)
+            if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
+                Text(version).font(.caption2).foregroundStyle(.tertiary)
+            }
         }
     }
 
@@ -95,7 +106,11 @@ struct MenuContent: View {
         if let peer = s.peerName(s.controlling) { return "Cursor on \(peer)" }
         if let peer = s.peerName(s.controlledBy) { return "Controlled by \(peer)" }
         let connected = s.peers.filter { $0.paired && $0.connected }.count
-        return connected == 0 ? "Not connected" : "Ready"
+        switch connected {
+        case 0: return "Not connected"
+        case 1: return "Ready"
+        default: return "Ready · \(connected) computers"
+        }
     }
 
     @ViewBuilder
@@ -105,10 +120,110 @@ struct MenuContent: View {
             Label("Looking for other computers on your network…", systemImage: "magnifyingglass")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
         }
         ForEach(visible) { peer in
             PeerRow(peer: peer, active: status.controlling == peer.id || status.controlledBy == peer.id)
         }
+    }
+}
+
+private struct MenuDivider: View {
+    var body: some View {
+        Divider().padding(.vertical, 6).padding(.horizontal, 6)
+    }
+}
+
+private struct SectionHeader: View {
+    let title: String
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.top, 2)
+            .padding(.bottom, 4)
+    }
+}
+
+/// A clickable row that highlights on hover, like a menu item.
+private struct ActionRow: View {
+    let title: String
+    var systemImage: String?
+    var shortcut: String?
+    let action: () -> Void
+    @State private var hovering = false
+
+    init(_ title: String, systemImage: String? = nil, shortcut: String? = nil, action: @escaping () -> Void) {
+        self.title = title
+        self.systemImage = systemImage
+        self.shortcut = shortcut
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                if let systemImage {
+                    RowIcon(systemImage: systemImage)
+                }
+                Text(title)
+                Spacer()
+                if let shortcut {
+                    Text(shortcut).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+            .background(RoundedRectangle(cornerRadius: 6).fill(hovering ? Color.primary.opacity(0.1) : .clear))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
+private struct SettingRow: View {
+    let title: String
+    let systemImage: String
+    @Binding var isOn: Bool
+
+    init(_ title: String, systemImage: String, isOn: Binding<Bool>) {
+        self.title = title
+        self.systemImage = systemImage
+        self._isOn = isOn
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            RowIcon(systemImage: systemImage)
+            Text(title).lineLimit(1)
+            Spacer(minLength: 8)
+            Toggle(title, isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+    }
+}
+
+/// A small symbol in a round tile, as in Control Center.
+private struct RowIcon: View {
+    let systemImage: String
+    var tint: Color = .primary.opacity(0.1)
+    var foreground: Color = .primary
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(foreground)
+            .frame(width: 24, height: 24)
+            .background(Circle().fill(tint))
     }
 }
 
@@ -119,27 +234,45 @@ struct PeerRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(peer.connected ? (peer.paired ? Color.green : Color.orange) : Color.secondary.opacity(0.4))
-                .frame(width: 8, height: 8)
+            RowIcon(
+                systemImage: peer.platform == "macos" ? "laptopcomputer" : "desktopcomputer",
+                tint: active ? .accentColor : .primary.opacity(0.1),
+                foreground: active ? .white : .primary
+            )
+            .overlay(alignment: .bottomTrailing) {
+                Circle()
+                    .fill(dotColour)
+                    .frame(width: 8, height: 8)
+                    .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 1.5))
+                    .offset(x: 1, y: 1)
+            }
             VStack(alignment: .leading, spacing: 1) {
-                Text(peer.name).fontWeight(active ? .semibold : .regular)
+                Text(peer.name).fontWeight(active ? .semibold : .medium)
                 Text(detail).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             if !peer.paired && peer.connected {
                 Button("Pair…") { Task { await model.startPairing(peer) } }
+                    .controlSize(.small)
             } else if peer.paired {
                 Menu {
                     Button("Forget \(peer.name)", role: .destructive) { Task { await model.unpair(peer) } }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Image(systemName: "ellipsis")
+                        .foregroundStyle(.secondary)
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
             }
         }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+    }
+
+    private var dotColour: Color {
+        guard peer.connected else { return .secondary }
+        return peer.paired ? .green : .orange
     }
 
     private var detail: String {

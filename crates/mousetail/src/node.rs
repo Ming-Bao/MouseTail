@@ -17,7 +17,7 @@ use mousetail_core::config::{Config, PeerConfig};
 use mousetail_core::controller::{Action, Controller};
 use mousetail_core::discovery::{self, Found};
 use mousetail_core::identity::{Identity, id_from_fingerprint};
-use mousetail_core::keys::CommandRemap;
+use mousetail_core::keys::{CommandRemap, ev};
 use mousetail_core::layout::{Point, Rect, Side};
 use mousetail_core::net;
 use mousetail_core::net::Endpoints;
@@ -771,6 +771,18 @@ impl Node {
                         // ordered stream, so the other side knows it's part of the crossing.
                         self.push_clipboard(&peer);
                         self.warn_if_keyboard_blocked();
+                        // The other side starts each visit with Caps Lock off; match ours.
+                        if platform::caps_lock_on() {
+                            for down in [true, false] {
+                                self.send(
+                                    &peer,
+                                    Message::Key {
+                                        code: ev::CAPSLOCK,
+                                        down,
+                                    },
+                                );
+                            }
+                        }
                     }
                 }
                 Action::Motion { peer, motion } => {

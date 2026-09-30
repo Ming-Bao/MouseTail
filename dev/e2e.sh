@@ -39,7 +39,10 @@ case ${1:-motion} in
       return 1
     }
     close_sink() { imac "hyprctl clients -j | jq -r '.[] | select(.class == \"bm-test\") | .pid' | xargs -r kill"; }
-    $drive warp 5 500; sleep 0.2; $drive push -10 0 2; sleep 0.3
+    # Approach the edge the way a mouse does, at a height where the iMac sits alongside.
+    $drive warp 60 200; sleep 0.2; $drive push -10 0 8; sleep 0.4
+    # Never type unless the cursor really is over there: the keys would land on this Mac.
+    if ! state | grep -q "cursor is on"; then echo "  FAIL didn't cross to the other computer; not typing"; exit 1; fi
     if open_sink kbd-sink.sh /tmp/bm-kbd; then
       $drive type "hello from the mac 42"; $drive key 24; sleep 0.5
       check "typed text arrived" "$(imac cat /tmp/bm-kbd)" "hello from the mac 42"
@@ -48,7 +51,7 @@ case ${1:-motion} in
     echo "== Command+T becomes Ctrl+T, plain keys unchanged"
     if open_sink raw-sink.sh /tmp/bm-raw; then
       $drive key 11 cmd; $drive type a; $drive key 24; sleep 0.5
-      check "raw bytes" "$(imac xxd -p /tmp/bm-raw)" "14610d"
+      check "raw bytes" "$(imac od -An -tx1 /tmp/bm-raw | tr -d " \\n")" "14610d"
     else check "test window focused" no yes; fi
     close_sink
     $drive push 3000 0 1; sleep 0.2

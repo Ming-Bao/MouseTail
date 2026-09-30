@@ -427,6 +427,17 @@ fn apply(action: &Action) {
 
 /// True while macOS withholds keystrokes from every app (a password field, a locked screen,
 /// Terminal's Secure Keyboard Entry). The mouse still works; typing can't be forwarded.
+/// Is Caps Lock on here?
+pub fn caps_lock_on() -> bool {
+    #[link(name = "ApplicationServices", kind = "framework")]
+    unsafe extern "C" {
+        fn CGEventSourceFlagsState(state: i32) -> u64;
+    }
+    const HID_SYSTEM_STATE: i32 = 1;
+    const ALPHA_SHIFT: u64 = 0x0001_0000;
+    unsafe { CGEventSourceFlagsState(HID_SYSTEM_STATE) & ALPHA_SHIFT != 0 }
+}
+
 pub fn keyboard_blocked() -> bool {
     #[link(name = "Carbon", kind = "framework")]
     unsafe extern "C" {

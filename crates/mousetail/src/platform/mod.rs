@@ -24,7 +24,9 @@ pub mod macos_audio;
 #[cfg(target_os = "macos")]
 mod macos_emulate;
 #[cfg(target_os = "macos")]
-pub use macos::{Capture, clipboard_get, clipboard_set, displays, keyboard_blocked, notify};
+pub use macos::{
+    Capture, caps_lock_on, clipboard_get, clipboard_set, displays, keyboard_blocked, notify,
+};
 #[cfg(target_os = "macos")]
 pub use macos_emulate::{Emulator, on_enter};
 
@@ -63,6 +65,12 @@ pub fn command_super_keys() -> HashSet<u16> {
 /// Is the OS withholding keystrokes from us (e.g. macOS Secure Input)?
 #[cfg(not(target_os = "macos"))]
 pub fn keyboard_blocked() -> bool {
+    false
+}
+
+/// Is Caps Lock on here? (Only the Mac says yet.)
+#[cfg(not(target_os = "macos"))]
+pub fn caps_lock_on() -> bool {
     false
 }
 

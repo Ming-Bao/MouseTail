@@ -1,10 +1,9 @@
 ## What's new
 
-- **MouseTail now keeps itself up to date**, on Mac and Linux. New releases are signed, checked,
-  and installed while you're not using another computer; turn it off in the Mac menu or with
-  `mousetail set updates off`. Install this release by hand once on each computer and the
-  rest arrive by themselves.
-- A new menu bar icon, also used in the Omarchy bar.
+- Caps Lock no longer gets stuck on the other computer after you switch it off on your Mac.
+- The app icon no longer shows faint white lines at small sizes, and the menu is tidier.
+- MouseTail keeps itself up to date. If you're on 0.2.0 or earlier, install this release by
+  hand once on each computer; 0.2.1 and later update by themselves.
 
 ## Install
 

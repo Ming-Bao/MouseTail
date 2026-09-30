@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" width="128" alt="MouseTail logo: a mouse leaping, its tail a cursor trail ending in an arrow">
+  <img src="assets/logo-512.png" width="128" alt="MouseTail logo: a mouse leaping, its tail a cursor trail ending in an arrow">
 </p>
 
 <h1 align="center">MouseTail</h1>

@@ -17,6 +17,10 @@ cp scripts/uninstall-linux.sh "$out/uninstall.sh"
 cp scripts/enable-wake-linux.sh "$out/enable-wake.sh"
 cp scripts/enable-input-linux.sh "$out/enable-input.sh"
 cp -r integrations/omarchy/nz.galengreen.mousetail "$out/omarchy-plugin/"
+# The plugin's version follows MouseTail's.
+version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+sed -i.bak "s/\"version\": \"[^\"]*\"/\"version\": \"$version\"/" "$out/omarchy-plugin/nz.galengreen.mousetail/manifest.json"
+rm "$out/omarchy-plugin/nz.galengreen.mousetail/manifest.json.bak"
 cp LICENSE "$out/"
 cat > "$out/README.txt" <<'TXT'
 MouseTail for Linux (Wayland)

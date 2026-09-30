@@ -1022,7 +1022,7 @@ dependencies = [
 
 [[package]]
 name = "mousetail"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1049,7 +1049,7 @@ dependencies = [
 
 [[package]]
 name = "mousetail-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

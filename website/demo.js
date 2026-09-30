@@ -16,6 +16,7 @@
   const imacScreen = demo.querySelector(".imac-screen");
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (new URLSearchParams(location.search).has("video")) document.body.classList.add("video-mode");
+  if (new URLSearchParams(location.search).has("og")) document.body.classList.add("og-mode");
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const box = () => demo.getBoundingClientRect();

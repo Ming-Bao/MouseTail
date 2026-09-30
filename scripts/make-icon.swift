@@ -39,16 +39,48 @@ func trimmed(_ file: String) -> (String, Double) {
     return (svg.replacingOccurrences(of: String(match.output[0].substring!), with: "viewBox=\"\(viewBox)\""), bw / bh)
 }
 
+/// assets/logo.png with the light band along the tile's top and bottom edges painted over in
+/// the tile's own colour (it shows as white lines at small sizes). The original is untouched.
+func logoWithoutEdgeLines() -> String {
+    let source = NSBitmapImageRep(data: try! Data(contentsOf: URL(fileURLWithPath: "assets/logo.png")))!
+    // Work on a plain RGBA copy (premultiplied alpha), pixel by pixel.
+    let rep = NSBitmapImageRep(data: render("assets/logo.png", source.pixelsWide))!
+    let (w, h, band, sample) = (rep.pixelsWide, rep.pixelsHigh, 14, 18)
+    var p = [Int](repeating: 0, count: 4)
+    func alpha(_ x: Int, _ y: Int) -> Int { rep.getPixel(&p, atX: x, y: y); return p[3] }
+    for x in 0..<w {
+        // This column's top and bottom edges of the tile.
+        guard let top = (0..<h).first(where: { alpha(x, $0) > 0 }),
+              let bottom = (0..<h).last(where: { alpha(x, $0) > 0 }),
+              bottom - top > 2 * sample else { continue }
+        for (edge, step) in [(top, 1), (bottom, -1)] {
+            var fill = [Int](repeating: 0, count: 4)
+            rep.getPixel(&fill, atX: x, y: edge + step * sample)
+            for i in 0..<band {
+                let y = edge + step * i
+                let a = alpha(x, y)
+                var out = [fill[0] * a / 255, fill[1] * a / 255, fill[2] * a / 255, a]
+                rep.setPixel(&out, atX: x, y: y)
+            }
+        }
+    }
+    let path = NSTemporaryDirectory() + "logo-clean.png"
+    try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path))
+    return path
+}
+
 let resources = URL(fileURLWithPath: "apps/macos/Resources")
 try! FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+
+let logo = logoWithoutEdgeLines()
 
 // App icon. The logo fills its canvas; macOS icons sit on an 824-in-1024 grid.
 let iconset = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("AppIcon.iconset")
 try? FileManager.default.removeItem(at: iconset)
 try! FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
 for size in [16, 32, 128, 256, 512] {
-    try! render("assets/logo.png", size, inset: 100 / 1024).write(to: iconset.appendingPathComponent("icon_\(size)x\(size).png"))
-    try! render("assets/logo.png", size * 2, inset: 100 / 1024).write(to: iconset.appendingPathComponent("icon_\(size)x\(size)@2x.png"))
+    try! render(logo, size, inset: 100 / 1024).write(to: iconset.appendingPathComponent("icon_\(size)x\(size).png"))
+    try! render(logo, size * 2, inset: 100 / 1024).write(to: iconset.appendingPathComponent("icon_\(size)x\(size)@2x.png"))
 }
 let task = Process()
 task.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
@@ -81,7 +113,7 @@ for path in ["website/logo-mouse.svg", "apps/macos/Resources/LogoMouse.svg"] {
 }
 
 // Web and README artwork.
-try! render("assets/logo.png", 512).write(to: URL(fileURLWithPath: "assets/logo-512.png"))
-try! render("assets/logo.png", 256).write(to: URL(fileURLWithPath: "website/logo.png"))
-try! render("assets/logo.png", 64).write(to: URL(fileURLWithPath: "website/favicon.png"))
+try! render(logo, 512).write(to: URL(fileURLWithPath: "assets/logo-512.png"))
+try! render(logo, 256).write(to: URL(fileURLWithPath: "website/logo.png"))
+try! render(logo, 64).write(to: URL(fileURLWithPath: "website/favicon.png"))
 print("wrote icons")

@@ -7,6 +7,7 @@ struct MenuContent: View {
     @EnvironmentObject var model: AppModel
     @ObservedObject private var updater = Updater.shared
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -89,11 +90,18 @@ struct MenuContent: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            // The mouse-only logo: the menu is its background.
-            Image(nsImage: NSImage(named: "LogoMouse") ?? NSApp.applicationIconImage)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 44, height: 34)
+            // The mouse-only logo on a dark menu; the white mouse is too faint on a light one,
+            // so there it's the app icon.
+            if colorScheme == .dark, let mouse = NSImage(named: "LogoMouse") {
+                Image(nsImage: mouse)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 44, height: 34)
+            } else {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 34, height: 34)
+            }
             VStack(alignment: .leading, spacing: 1) {
                 Text("MouseTail").font(.system(size: 14, weight: .semibold))
                 Text(summary).font(.caption).foregroundStyle(.secondary)

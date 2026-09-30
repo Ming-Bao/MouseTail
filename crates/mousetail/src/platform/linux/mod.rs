@@ -450,7 +450,10 @@ impl Injector {
                     self.pointer.button(t, code as u32, ButtonState::Released);
                 }
                 self.pointer.frame();
+                // Caps Lock too: the next computer to take over sets it again if it's on
+                // there, so it can't stay stuck on after being switched off elsewhere.
                 self.mods = 0;
+                self.caps_locked = false;
                 self.send_modifiers();
             }
         }

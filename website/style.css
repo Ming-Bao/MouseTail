@@ -269,6 +269,15 @@ kbd { font-family: var(--mono); padding: .3rem .5rem; border-radius: .4rem; back
 .js .reveal { opacity: 0; transform: translateY(1.5rem); transition: opacity .8s ease, transform .8s cubic-bezier(.2, .7, .2, 1); }
 .js .reveal.in { opacity: 1; transform: none; }
 
+/* ?og: the headline over the demo, for the 1200 × 630 link preview (og.png) */
+body.og-mode .nav, body.og-mode main, body.og-mode footer, body.og-mode .badge, body.og-mode .lede,
+body.og-mode .actions, body.og-mode .caption { display: none; }
+body.og-mode .hero { padding: 0; }
+body.og-mode .panel { border-radius: 0; background-size: 120% auto; background-position: left center; }
+body.og-mode .hero-panel { min-height: 100vh; padding-top: 3.2rem; }
+body.og-mode h1 { font-size: 5.4rem; margin: 0; }
+body.og-mode .stage { width: 88vw; padding-top: 1.5rem; }
+
 /* ?video: just the demo, for recording */
 body.video-mode .nav, body.video-mode main, body.video-mode footer, body.video-mode .hero-copy { display: none; }
 body.video-mode .hero-panel { min-height: 100vh; padding-top: 0; justify-content: flex-end; }

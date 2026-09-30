@@ -5,9 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MouseTail — One mouse, every computer</title>
   <meta name="description" content="Push your cursor off the edge of one computer's screen and keep going, onto the one beside it. Your keyboard, clipboard and sound come too. Mac and Linux.">
+  <link rel="canonical" href="https://mousetail.galen.green/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="MouseTail">
+  <meta property="og:url" content="https://mousetail.galen.green/">
   <meta property="og:title" content="MouseTail — One mouse, every computer">
   <meta property="og:description" content="Push your cursor off the edge of one computer's screen and keep going, onto the one beside it.">
   <meta property="og:image" content="https://mousetail.galen.green/og.png">
+  <meta property="og:image:alt" content="MouseTail: one mouse, every computer">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="theme-color" content="#080808">
   <link rel="icon" href="favicon.png" type="image/png">
@@ -32,7 +37,7 @@
   <header class="hero" id="top">
     <div class="panel hero-panel">
       <div class="hero-copy">
-        <a class="badge" href="#features"><span class="badge-tag">New</span>MouseTail now keeps itself up to date <svg class="i" viewBox="0 0 16 16"><path d="M3 8h10m0 0L9 4m4 4-4 4"/></svg></a>
+        <a class="badge" href="#features"><span class="badge-tag">New</span>Trackpad scrolling, and pause a computer <svg class="i" viewBox="0 0 16 16"><path d="M3 8h10m0 0L9 4m4 4-4 4"/></svg></a>
         <h1>One mouse.<br>Every computer.</h1>
         <p class="lede">Push your cursor off the edge of one computer's screen and keep going, onto the one beside it. Your keyboard, clipboard and sound come too. Mac and Linux, either way round.</p>
         <div class="actions">
@@ -196,8 +201,9 @@
         <p class="section-lede left">Your keystrokes go straight to the computer beside you and nowhere else.</p>
         <ul class="points">
           <li><svg class="i" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.8"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg><div><h3>Encrypted end to end</h3><p>Every connection uses TLS 1.3, with keys that never leave each computer.</p></div></li>
-          <li><svg class="i" viewBox="0 0 16 16"><path d="M2.5 8a5.5 5.5 0 1 0 11 0 5.5 5.5 0 1 0-11 0M4.2 4.2l7.6 7.6"/></svg><div><h3>No account, no cloud</h3><p>Nothing to sign up for. MouseTail only ever talks to your own computers.</p></div></li>
+          <li><svg class="i" viewBox="0 0 16 16"><path d="M2.5 8a5.5 5.5 0 1 0 11 0 5.5 5.5 0 1 0-11 0M4.2 4.2l7.6 7.6"/></svg><div><h3>No account, no cloud</h3><p>Nothing to sign up for. MouseTail only ever talks to your own computers, apart from checking for updates.</p></div></li>
           <li><svg class="i" viewBox="0 0 16 16"><path d="M3 5.5h10M3 10.5h10M6 2.5l-1 11M11 2.5l-1 11"/></svg><div><h3>Paired with a code</h3><p>The code never crosses the network, and wrong guesses lock pairing for a while.</p></div></li>
+          <li><svg class="i" viewBox="0 0 16 16"><path d="M8 1.8 13 3.8v3.6c0 3-2.1 5.6-5 6.8-2.9-1.2-5-3.8-5-6.8V3.8z"/><path d="m5.8 8 1.6 1.6 3-3.2"/></svg><div><h3>Signed updates</h3><p>Updates come from GitHub and are refused unless they carry MouseTail's signature.</p></div></li>
         </ul>
       </div>
       <div class="split-art">
@@ -291,7 +297,7 @@
             <span class="cmd-text"><span class="dim">$</span> curl -fsSL https://mousetail.galen.green/install.sh | sh</span>
             <svg class="i copy-icon" viewBox="0 0 16 16"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6"/><path d="M10.5 3.5v-.4A1.6 1.6 0 0 0 8.9 1.5H3.1a1.6 1.6 0 0 0-1.6 1.6v5.8a1.6 1.6 0 0 0 1.6 1.6h.4"/></svg>
           </button>
-          <p class="fine">macOS 14.2+, Apple Silicon and Intel. Not notarised yet: the first time, open System Settings → Privacy &amp; Security and click Open Anyway. Linux: Hyprland, Sway, KDE and GNOME on Wayland (some still experimental).</p>
+          <p class="fine">macOS 14.2+, Apple Silicon and Intel. Not notarised yet: the first time, open System Settings → Privacy &amp; Security and click Open Anyway. Linux: Wayland desktops with systemd and PipeWire. Hyprland is tested; Sway, niri, river, KDE and GNOME should work but are untested.</p>
           <a class="text-link" href="https://github.com/galengreen/mousetail/releases">Release notes on GitHub <svg class="i" viewBox="0 0 16 16"><path d="M5 11 11 5m0 0H6m5 0v5"/></svg></a>
         </div>
       </div>

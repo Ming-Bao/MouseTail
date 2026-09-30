@@ -61,7 +61,10 @@ Each starts when its permissions allow (macOS Accessibility, Linux `/dev/uinput`
 and is re-announced to peers in a fresh `Hello`, so granting a permission takes effect without
 a restart. While a node is being controlled, its own controller is suspended, so an injected
 cursor reaching an edge can't bounce on to a third machine; on macOS, injected events are also
-tagged (`kCGEventSourceUserData`) and ignored by our own tap.
+tagged (`kCGEventSourceUserData`) and ignored by our own tap. The one exception: once the
+controlling computer has been still for 250 ms, pushing this computer's own mouse against the
+edge that leads back to it takes the cursor over there, and the controlling computer, told by
+that `Enter`, brings its own cursor home.
 
 ### Platform backends
 

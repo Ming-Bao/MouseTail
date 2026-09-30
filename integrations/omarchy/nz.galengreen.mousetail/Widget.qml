@@ -5,8 +5,10 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// MouseTail in the Omarchy bar: the MouseTail icon, and a panel showing who's connected, any pairing code, and the clipboard setting. Status
-// streams from `mousetail watch`, one JSON line per change.
+// MouseTail in the Omarchy bar: the MouseTail icon, and a panel with what the Mac's menu has:
+// who's connected (pair, pause, forget), Arrange Displays (ArrangeWindow.qml), any pairing
+// code, the settings, and updates. Status streams from `mousetail watch`, one JSON line per change;
+// everything else is the `mousetail` command.
 Panel {
   id: root
   moduleName: "nz.galengreen.mousetail"
@@ -28,6 +30,19 @@ Panel {
   readonly property bool clipboard: status.settings ? status.settings.clipboard === true : true
   readonly property bool audio: status.settings ? status.settings.audio !== false : true
   readonly property bool ripple: status.settings ? status.settings.ripple !== false : true
+  readonly property bool updates: status.settings ? status.settings.updates !== false : true
+
+  // Pairing from here: the computer asked to show a code, and what went wrong if anything.
+  property string pairingWith: ""
+  property string pairingError: ""
+  // Typing a pairing code: the panel's own keys stand aside.
+  property bool editing: false
+  // The last thing an action had to say (an update check, a failed command).
+  property string message: ""
+  // Starts with the desktop (the systemd user service is enabled).
+  property bool atLogin: true
+  // The Arrange Displays overlay is showing.
+  property bool arranging: false
 
   readonly property string summary: {
     if (!running) return "Not running"
@@ -46,11 +61,14 @@ Panel {
   }
 
   function peerDetail(p) {
-    if (!p.paired) return "Found on your network. Run mousetail pair to connect it."
+    if (!p.paired) return p.connected ? "Found on your network" : "Not paired"
     if (p.paused) return p.connected ? "Paused" : "Paused · Offline"
     if (!p.connected) return "Offline"
     if (status.controlled_by === p.id) return "Using this computer now"
-    return "Connected"
+    var parts = ["Connected"]
+    if (p.sound === "here") parts.push("its sound plays here")
+    if (p.sound === "there") parts.push("plays your sound")
+    return parts.join(" · ")
   }
 
   function apply(line) {
@@ -75,20 +93,52 @@ Panel {
     setter.running = true
   }
 
-  function setClipboard(on) {
-    runSetter([binary, "set", "clipboard", on ? "on" : "off"])
-  }
-
-  function setRipple(on) {
-    runSetter([binary, "set", "ripple", on ? "on" : "off"])
-  }
-
-  function setAudio(on) {
-    runSetter([binary, "set", "audio", on ? "on" : "off"])
+  function setSetting(key, on) {
+    runSetter([binary, "set", key, on ? "on" : "off"])
   }
 
   function setPaused(p, paused) {
     runSetter([binary, paused ? "pause" : "resume", p.id])
+  }
+
+  function forget(p) {
+    runSetter([binary, "unpair", p.id])
+  }
+
+  function setAtLogin(on) {
+    atLogin = on
+    runSetter(["systemctl", "--user", on ? "enable" : "disable", "mousetail"])
+  }
+
+  function startPairing(p) {
+    pairer.running = false
+    pairingWith = p.id
+    pairingError = ""
+    pairer.command = [binary, "pair", p.id]
+    pairer.running = true
+  }
+
+  function sendCode(code) {
+    if (code.trim() === "") return
+    pairingError = ""
+    pairer.write(code.trim() + "\n")
+  }
+
+  function cancelPairing() {
+    pairer.running = false
+    pairingWith = ""
+    pairingError = ""
+    editing = false
+  }
+
+  function checkForUpdates() {
+    message = "Checking for updates…"
+    updater.running = true
+  }
+
+  onOpenedChanged: if (opened) {
+    message = ""
+    loginCheck.running = true
   }
 
   Process {
@@ -110,6 +160,10 @@ Panel {
 
   Process {
     id: setter
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (text.trim() !== "") root.message = text.trim().replace(/^mousetail: /, "")
+    }
     onExited: {
       if (root.queued.length > 0) {
         var next = root.queued[0]
@@ -117,6 +171,67 @@ Panel {
         root.runSetter(next)
       }
     }
+  }
+
+  // `mousetail pair` asks the other computer to show a code, then reads it from stdin.
+  Process {
+    id: pairer
+    stdinEnabled: true
+    stdout: SplitParser {
+      onRead: function(line) {
+        if (line.indexOf("Paired with") >= 0) {
+          root.message = line.trim()
+          root.pairingWith = ""
+          root.editing = false
+        }
+      }
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (text.trim() !== "") root.pairingError = text.trim().replace(/^mousetail: /, "")
+    }
+    onExited: function(code) {
+      // A wrong code ends the command: offer to start again rather than leave a dead field.
+      if (code !== 0 && root.pairingWith !== "" && root.pairingError === "")
+        root.pairingError = "That didn't work. Try again."
+    }
+  }
+
+  Process {
+    id: updater
+    command: [root.binary, "update"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (text.trim() !== "") root.message = text.trim()
+    }
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (text.trim() !== "") root.message = text.trim().replace(/^mousetail: /, "")
+    }
+  }
+
+  Process {
+    id: loginCheck
+    command: ["systemctl", "--user", "is-enabled", "mousetail"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.atLogin = text.trim() === "enabled"
+    }
+  }
+
+  // `quickshell ipc -p /usr/share/omarchy/shell call nz.galengreen.mousetail.arrange open`,
+  // for a key binding.
+  IpcHandler {
+    target: "nz.galengreen.mousetail.arrange"
+    function open(): void { root.arranging = true }
+    function close(): void { root.arranging = false }
+  }
+
+  ArrangeWindow {
+    visible: root.arranging
+    binary: root.binary
+    fontFamily: root.fontFamily
+    onDone: root.arranging = false
   }
 
   implicitWidth: button.implicitWidth
@@ -184,6 +299,14 @@ Panel {
     }
   }
 
+  component Note: Text {
+    width: parent ? parent.width : 0
+    wrapMode: Text.WordWrap
+    color: root.dim
+    font.family: root.fontFamily
+    font.pixelSize: Style.font.caption
+  }
+
   KeyboardPanel {
     id: panel
     anchorItem: button
@@ -191,12 +314,14 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(340))
+    contentWidth: panel.fittedContentWidth(Style.space(360))
     contentHeight: panel.fittedContentHeight(column.implicitHeight)
 
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
+      // While a pairing code is being typed, the keys are the field's.
+      blocked: root.editing
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
 
@@ -221,6 +346,24 @@ Panel {
           }
         }
 
+        // Anything stopping MouseTail doing its job here.
+        Column {
+          width: parent.width
+          spacing: Style.space(4)
+          visible: root.running && (!!root.status.capture_error || root.status.can_be_controlled === false)
+
+          Note {
+            visible: !!root.status.capture_error
+            text: root.status.capture_error || ""
+            color: Color.urgent
+          }
+
+          Note {
+            visible: root.status.can_be_controlled === false
+            text: "Other computers can't control this one yet. Run this once: ~/.local/share/mousetail/enable-input.sh"
+          }
+        }
+
         Column {
           width: parent.width
           spacing: Style.space(6)
@@ -239,19 +382,14 @@ Panel {
             font.weight: Font.DemiBold
           }
 
-          Text {
-            width: parent.width
-            wrapMode: Text.WordWrap
+          Note {
             text: "Type this on " + (root.pairingCode && root.pairingCode.name ? root.pairingCode.name : "your other computer") + " to connect it."
-            color: root.dim
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
           }
         }
 
         Column {
           width: parent.width
-          spacing: Style.space(6)
+          spacing: Style.space(10)
           visible: root.running
 
           PanelSectionHeader {
@@ -259,65 +397,162 @@ Panel {
             text: "Computers"
           }
 
-          Text {
+          Note {
             visible: root.peers.length === 0
-            width: parent.width
-            wrapMode: Text.WordWrap
             text: "Looking for other computers on your network…"
-            color: root.dim
-            font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
           }
 
           Repeater {
             model: root.peers
 
-            delegate: Item {
+            delegate: Column {
+              id: peerRow
               required property var modelData
+              readonly property bool pairing: root.pairingWith === modelData.id
               width: parent.width
-              implicitHeight: peerText.implicitHeight
+              spacing: Style.space(6)
 
+              Item {
+                width: parent.width
+                implicitHeight: Math.max(peerText.implicitHeight, actions.implicitHeight)
+
+                Column {
+                  id: peerText
+                  anchors.left: parent.left
+                  anchors.right: actions.left
+                  anchors.rightMargin: Style.space(8)
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(1)
+
+                  Text {
+                    width: parent.width
+                    elide: Text.ElideRight
+                    text: peerRow.modelData.name
+                    color: peerRow.modelData.connected && !peerRow.modelData.paused ? root.foreground : root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                  }
+
+                  Text {
+                    width: parent.width
+                    elide: Text.ElideRight
+                    text: root.peerDetail(peerRow.modelData)
+                    color: root.dim
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+
+                Row {
+                  id: actions
+                  anchors.right: parent.right
+                  anchors.verticalCenter: parent.verticalCenter
+                  spacing: Style.space(2)
+
+                  Button {
+                    visible: !peerRow.modelData.paired && peerRow.modelData.connected && !peerRow.pairing
+                    text: "Pair…"
+                    bordered: true
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    fontSize: Style.font.bodySmall
+                    onClicked: root.startPairing(peerRow.modelData)
+                  }
+
+                  PanelActionButton {
+                    visible: peerRow.modelData.paired
+                    iconText: peerRow.modelData.paused ? "󰐊" : "󰏤"
+                    tooltipText: peerRow.modelData.paused ? "Resume " + peerRow.modelData.name : "Pause " + peerRow.modelData.name + " without forgetting it"
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    onClicked: root.setPaused(peerRow.modelData, !peerRow.modelData.paused)
+                  }
+
+                  PanelActionButton {
+                    visible: peerRow.modelData.paired
+                    iconText: "󰅙"
+                    tooltipText: "Forget " + peerRow.modelData.name
+                    foreground: root.foreground
+                    hoverColor: Color.urgent
+                    fontFamily: root.fontFamily
+                    onClicked: root.forget(peerRow.modelData)
+                  }
+                }
+              }
+
+              // Pairing: the other computer is showing a code to type here.
               Column {
-                id: peerText
-                anchors.left: parent.left
-                anchors.right: pauseButton.left
-                spacing: Style.space(1)
+                visible: peerRow.pairing
+                width: parent.width
+                spacing: Style.space(6)
 
-                Text {
-                  text: modelData.name
-                  color: modelData.connected && !modelData.paused ? root.foreground : root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
+                Note {
+                  text: "Type the code showing on " + peerRow.modelData.name + ":"
                 }
 
-                Text {
-                  text: root.peerDetail(modelData)
-                  color: root.dim
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
+                Item {
+                  width: parent.width
+                  implicitHeight: codeField.implicitHeight
+
+                  TextField {
+                    id: codeField
+                    anchors.left: parent.left
+                    anchors.right: cancelPair.left
+                    anchors.rightMargin: Style.space(6)
+                    placeholderText: "Code"
+                    inputMethodHints: Qt.ImhDigitsOnly
+                    maximumLength: 8
+                    foreground: root.foreground
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    onActiveFocusChanged: root.editing = activeFocus
+                    onAccepted: {
+                      root.sendCode(text)
+                      text = ""
+                    }
+                    Keys.onPressed: function(event) {
+                      if (event.key === Qt.Key_Escape) {
+                        root.cancelPairing()
+                        event.accepted = true
+                      }
+                    }
+                  }
+
+                  Button {
+                    id: cancelPair
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Cancel"
+                    foreground: root.foreground
+                    fontFamily: root.fontFamily
+                    fontSize: Style.font.bodySmall
+                    onClicked: root.cancelPairing()
+                  }
                 }
+
+                Note {
+                  visible: root.pairingError !== ""
+                  text: root.pairingError
+                  color: Color.urgent
+                }
+
+                // Focus the field as soon as it shows, so the code can just be typed.
+                onVisibleChanged: if (visible) codeField.forceActiveFocus()
               }
+            }
+          }
 
-              // Pause without forgetting it, and resume.
-              Text {
-                id: pauseButton
-                visible: modelData.paired
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                text: modelData.paused ? "Resume" : "Pause"
-                color: pauseArea.containsMouse ? root.foreground : root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
-
-                MouseArea {
-                  id: pauseArea
-                  anchors.fill: parent
-                  anchors.margins: -Style.space(4)
-                  hoverEnabled: true
-                  cursorShape: Qt.PointingHandCursor
-                  onClicked: root.setPaused(modelData, !modelData.paused)
-                }
-              }
+          Button {
+            visible: root.peers.some(function(p) { return p.paired })
+            text: "Arrange Displays…"
+            bordered: true
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            fontSize: Style.font.bodySmall
+            onClicked: {
+              root.close()
+              root.arranging = true
             }
           }
         }
@@ -335,30 +570,77 @@ Panel {
           SettingRow {
             label: "Sound follows you"
             checked: root.audio
-            onToggled: root.setAudio(!root.audio)
+            onToggled: root.setSetting("audio", !root.audio)
           }
 
           SettingRow {
             label: "Share clipboard"
             checked: root.clipboard
-            onToggled: root.setClipboard(!root.clipboard)
+            onToggled: root.setSetting("clipboard", !root.clipboard)
           }
 
           SettingRow {
             label: "Ripple when crossing"
             checked: root.ripple
-            onToggled: root.setRipple(!root.ripple)
+            onToggled: root.setSetting("ripple", !root.ripple)
+          }
+
+          SettingRow {
+            label: "Start at login"
+            checked: root.atLogin
+            onToggled: root.setAtLogin(!root.atLogin)
+          }
+
+          SettingRow {
+            label: "Update automatically"
+            checked: root.updates
+            onToggled: root.setSetting("updates", !root.updates)
           }
         }
 
-        Text {
+        Note {
           visible: !root.running
-          width: parent.width
-          wrapMode: Text.WordWrap
-          text: "MouseTail isn't running. Start it with: systemctl --user start mousetail"
-          color: root.dim
-          font.family: root.fontFamily
+          text: "MouseTail isn't running."
           font.pixelSize: Style.font.bodySmall
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(8)
+
+          Note {
+            visible: root.message !== ""
+            text: root.message
+          }
+
+          Row {
+            spacing: Style.space(6)
+
+            Button {
+              visible: root.running
+              text: "Check for Updates"
+              bordered: true
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              fontSize: Style.font.bodySmall
+              enabled: !updater.running
+              onClicked: root.checkForUpdates()
+            }
+
+            Button {
+              text: root.running ? "Stop MouseTail" : "Start MouseTail"
+              bordered: true
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              fontSize: Style.font.bodySmall
+              onClicked: root.runSetter(["systemctl", "--user", root.running ? "stop" : "start", "mousetail"])
+            }
+          }
+
+          Note {
+            visible: !!root.status.version
+            text: "MouseTail " + (root.status.version || "")
+          }
         }
       }
     }

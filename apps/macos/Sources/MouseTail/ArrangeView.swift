@@ -15,8 +15,9 @@ struct ArrangeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Arrange Displays").font(.title2.weight(.semibold))
+                .foregroundStyle(Brand.text)
             Text("Drag each computer to where it sits on your desk. Push the cursor off a highlighted edge to move to the other computer.")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Brand.muted)
                 .fixedSize(horizontal: false, vertical: true)
 
             GeometryReader { geo in
@@ -27,17 +28,22 @@ struct ArrangeView: View {
                 }
             }
             .frame(minWidth: 420, idealWidth: 560, minHeight: 260, idealHeight: 340)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .underPageBackgroundColor)))
+            .background(RoundedRectangle(cornerRadius: 12).fill(Brand.card))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Brand.line))
             .clipShape(RoundedRectangle(cornerRadius: 12))
 
             HStack {
                 legend
                 Spacer()
                 Button("Done") { dismiss() }
+                    .buttonStyle(GlowButton())
                     .keyboardShortcut(.defaultAction)
             }
         }
         .padding(20)
+        .background(Brand.background)
+        // The brand is dark, whatever the Mac's appearance.
+        .preferredColorScheme(.dark)
         // Bounded on every side: an unbounded canvas lets macOS size the window to the screen.
         .frame(minWidth: 480, idealWidth: 620, maxWidth: 1400,
                minHeight: 380, idealHeight: 460, maxHeight: 1000)
@@ -54,15 +60,18 @@ struct ArrangeView: View {
             Label { Text("This Mac") } icon: { swatch(.thisMac) }
             Label { Text("Other computers") } icon: { swatch(.other) }
             Label { Text("Cursor crosses here") } icon: {
-                Capsule().fill(Color.accentColor).frame(width: 14, height: 4)
+                Capsule().fill(Brand.glow).frame(width: 14, height: 3)
+                    .shadow(color: Brand.glowSoft, radius: 3)
             }
         }
         .font(.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Brand.muted)
     }
 
     private func swatch(_ kind: Kind) -> some View {
-        RoundedRectangle(cornerRadius: 2).fill(kind.fill).frame(width: 14, height: 10)
+        RoundedRectangle(cornerRadius: 2).fill(kind.fill)
+            .overlay(RoundedRectangle(cornerRadius: 2).stroke(.white.opacity(kind.border)))
+            .frame(width: 14, height: 10)
     }
 
     // MARK: Canvas
@@ -80,8 +89,8 @@ struct ArrangeView: View {
                         p.move(to: t.view(edge[0]))
                         p.addLine(to: t.view(edge[1]))
                     }
-                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 5, lineCap: .round))
-                    .shadow(color: Color.accentColor.opacity(0.6), radius: 4)
+                    .stroke(Brand.glow, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .shadow(color: Brand.glowSoft, radius: 6)
                     .allowsHitTesting(false)
                 }
             }
@@ -170,15 +179,61 @@ struct Transform: Equatable {
     }
 }
 
+/// MouseTail's colours, as on the website: near-black, warm off-white, and the logo's glowing
+/// yellow tail for where the cursor crosses.
+enum Brand {
+    static let background = Color(red: 0.031, green: 0.031, blue: 0.031) // #080808
+    static let card = Color(red: 0.067, green: 0.071, blue: 0.071) // #111212
+    static let text = Color(red: 0.949, green: 0.945, blue: 0.925) // #f2f1ec
+    static let muted = text.opacity(0.64)
+    static let faint = text.opacity(0.42)
+    static let line = text.opacity(0.09)
+    static let glow = Color(red: 1.0, green: 0.922, blue: 0.655) // #ffeba7
+    static let glowSoft = Color(red: 1.0, green: 0.878, blue: 0.431).opacity(0.55)
+}
+
+/// Each kind of display tile: graphite for this Mac, warm for the others (as on the website's
+/// arrangement), dimmer when offline.
 enum Kind {
     case thisMac, other, offline
 
-    var fill: Color {
-        switch self {
-        case .thisMac: return Color(red: 0.27, green: 0.52, blue: 0.95)
-        case .other: return Color(red: 0.55, green: 0.40, blue: 0.90)
-        case .offline: return Color.gray.opacity(0.6)
+    var fill: LinearGradient {
+        let (top, bottom): (Color, Color) = switch self {
+        case .thisMac: (Color(red: 0.220, green: 0.224, blue: 0.224), Color(red: 0.161, green: 0.165, blue: 0.165))
+        case .other: (Color(red: 0.290, green: 0.271, blue: 0.208), Color(red: 0.208, green: 0.196, blue: 0.149))
+        case .offline: (Color(red: 0.137, green: 0.141, blue: 0.141), Color(red: 0.106, green: 0.110, blue: 0.110))
         }
+        return LinearGradient(colors: [top, bottom], startPoint: .top, endPoint: .bottom)
+    }
+
+    /// Edge opacity (white).
+    var border: Double {
+        switch self {
+        case .thisMac: return 0.12
+        case .other: return 0.18
+        case .offline: return 0.08
+        }
+    }
+
+    var label: Color {
+        switch self {
+        case .thisMac: return Brand.muted
+        case .other: return Brand.text
+        case .offline: return Brand.faint
+        }
+    }
+}
+
+/// The website's light pill, glowing: for the window's one button.
+struct GlowButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.callout.weight(.medium))
+            .foregroundStyle(Brand.background)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(Brand.glow.opacity(configuration.isPressed ? 0.8 : 1)))
+            .shadow(color: Brand.glowSoft.opacity(0.6), radius: 6)
     }
 }
 
@@ -201,12 +256,12 @@ struct DisplayTile: View {
     var body: some View {
         ZStack(alignment: .top) {
             RoundedRectangle(cornerRadius: 5)
-                .fill(kind.fill.gradient)
+                .fill(kind.fill)
             if display.primary {
                 // A menu bar strip marks each computer's main display, as macOS does.
                 UnevenRoundedRectangle(topLeadingRadius: 5, topTrailingRadius: 5)
-                    .fill(.white.opacity(0.85))
-                    .frame(height: 6)
+                    .fill(Brand.text.opacity(0.45))
+                    .frame(height: 5)
             }
             VStack(spacing: 2) {
                 Text(machine.this ? "This Mac" : machine.name)
@@ -215,14 +270,17 @@ struct DisplayTile: View {
                     .font(.caption2)
                     .opacity(0.85)
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(kind.label)
             .lineLimit(1)
             .minimumScaleFactor(0.5)
             .padding(6)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .overlay(RoundedRectangle(cornerRadius: 5).stroke(.white.opacity(lifted ? 0.9 : 0.35), lineWidth: lifted ? 2 : 1))
-        .shadow(color: .black.opacity(lifted ? 0.35 : 0.15), radius: lifted ? 10 : 2, y: lifted ? 6 : 1)
+        .overlay(
+            RoundedRectangle(cornerRadius: 5)
+                .stroke(lifted ? Brand.glow : .white.opacity(kind.border), lineWidth: lifted ? 1.5 : 1)
+        )
+        .shadow(color: lifted ? Brand.glowSoft : .black.opacity(0.3), radius: lifted ? 12 : 2, y: lifted ? 4 : 1)
         .contentShape(Rectangle())
         .onHover { inside in
             guard !machine.this, inside != hovering else { return }

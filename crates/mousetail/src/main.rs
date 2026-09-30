@@ -27,6 +27,8 @@ Usage:
   mousetail place <machine> <side> [n]  Put a machine left/right/above/below display n
                                         (default: the main display)
   mousetail release                     Bring the cursor back to this machine
+  mousetail layout                      Print the arrangement as JSON (for status bars)
+  mousetail place-at <machine> <x> <y>  Drop a machine at a layout point; it snaps into place
   mousetail set <clipboard|audio|updates|ripple> <on|off>  Change a setting
   mousetail update                      Install the latest release now (Linux)
   mousetail watch                       Print status as JSON, one line per change
@@ -126,6 +128,23 @@ async fn run() -> anyhow::Result<()> {
             )
             .await?;
             println!("Done.");
+            Ok(())
+        }
+        "layout" => {
+            let v = ipc::call(&paths.socket, &Request::Layout).await?;
+            println!("{v}");
+            Ok(())
+        }
+        "place-at" => {
+            let peer = arg(1).context("which machine?")?.to_string();
+            let number = |i: usize| -> anyhow::Result<f64> {
+                Ok(arg(i)
+                    .context("where? place-at <machine> <x> <y>")?
+                    .parse()?)
+            };
+            let (x, y) = (number(2)?, number(3)?);
+            let v = ipc::call(&paths.socket, &Request::PlaceAt { peer, x, y }).await?;
+            println!("{v}");
             Ok(())
         }
         "release" => {

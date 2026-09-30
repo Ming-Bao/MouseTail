@@ -315,6 +315,17 @@ impl Layout {
     /// Stretches of display edge where the cursor passes to another computer, for drawing in
     /// the arrangement view. Each is (start, end) in layout coordinates.
     pub fn crossing_edges(&self) -> Vec<(Point, Point)> {
+        self.edges_where(|from, to| from != to)
+    }
+
+    /// Stretches of machine `a`'s display edges that lead to machine `b`.
+    pub fn edges_between(&self, a: usize, b: usize) -> Vec<(Point, Point)> {
+        self.edges_where(|from, to| from == a && to == b)
+    }
+
+    /// Stretches of display edge leading from one machine to another, for which `leads`
+    /// (from machine, to machine) holds.
+    fn edges_where(&self, leads: impl Fn(usize, usize) -> bool) -> Vec<(Point, Point)> {
         const STEP: f64 = 2.0;
         let mut out = vec![];
         for from in self.displays().collect::<Vec<_>>() {
@@ -336,7 +347,7 @@ impl Layout {
                     let crosses = v < hi
                         && self
                             .neighbour(from, side, v)
-                            .is_some_and(|c| c.to.machine != from.machine);
+                            .is_some_and(|c| leads(from.machine, c.to.machine));
                     match (crosses, run) {
                         (true, None) => run = Some(v),
                         (false, Some(start)) => {

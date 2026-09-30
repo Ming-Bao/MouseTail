@@ -4,6 +4,7 @@
 //! - `Emulator`: injects input received from a controller.
 //! - `AudioSource` / `AudioPlayer`: this machine's sound going out / another's playing here.
 //! - `NowPlaying`: this machine's media controls, while another machine's sound plays here.
+//! - `Ripples`: the ripple drawn where the cursor crosses.
 //!
 //! Platforms without a backend get stubs whose `start` fails, which simply means that machine
 //! can't take that role yet.
@@ -29,6 +30,8 @@ pub mod macos_audio;
 mod macos_emulate;
 #[cfg(target_os = "macos")]
 mod macos_media;
+#[cfg(target_os = "macos")]
+mod macos_ripple;
 #[cfg(target_os = "macos")]
 mod macos_tap;
 #[cfg(target_os = "macos")]
@@ -85,6 +88,13 @@ pub use stubs::AudioSource;
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub use stubs::Emulator;
+
+#[cfg(target_os = "linux")]
+pub use linux::ripple::Ripples;
+#[cfg(target_os = "macos")]
+pub use macos_ripple::Ripples;
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+pub use stubs::Ripples;
 
 /// Keys that Command should turn into Super on this machine (see `keys::CommandRemap`).
 #[cfg(not(target_os = "linux"))]
@@ -147,6 +157,8 @@ mod stubs {
         pub fn apply(&self, _action: &Action) {}
 
         pub fn set_edges(&self, _edges: Vec<super::Edge>) {}
+
+        pub fn hide_cursor(&self) {}
     }
 
     /// Plays another machine's sound here.
@@ -170,6 +182,17 @@ mod stubs {
 
         pub fn show(&self, _source: &str, _playing: bool) {}
         pub fn clear(&self) {}
+    }
+
+    /// Draws the ripple where the cursor crosses.
+    pub struct Ripples;
+
+    impl Ripples {
+        pub fn start() -> anyhow::Result<Self> {
+            anyhow::bail!("the crossing ripple isn't supported on this platform yet")
+        }
+
+        pub fn show(&self, _at: mousetail_core::layout::Point, _strength: f32) {}
     }
 
     /// A virtual speaker whose sound is sent to another machine.

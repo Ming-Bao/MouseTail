@@ -57,6 +57,12 @@ pub enum Action {
     Wake {
         peer: String,
     },
+    /// The cursor just crossed this (local) point on an edge: left for another computer, or
+    /// arrived back from one. Only for show.
+    Crossed {
+        at: Point,
+        arrived: bool,
+    },
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -85,7 +91,8 @@ const SELF: usize = 0;
 const TAKEOVER_QUIET: Duration = Duration::from_millis(250);
 
 enum Exit {
-    Cross(DisplayRef, Point),
+    /// Where it lands, and the point on our own edge it leaves from.
+    Cross(DisplayRef, Point, Point),
     Offline(String),
 }
 
@@ -333,6 +340,33 @@ impl Controller {
         }
     }
 
+    /// The point on an edge of ours leading to `peer` nearest `at` (local coordinates), if
+    /// `at` is close to one: where a cursor `peer` moves in or out of us crossed.
+    pub fn edge_towards(&self, peer: &str, at: Point) -> Option<Point> {
+        /// Further than a fast flick's single step from the edge means it didn't cross there
+        /// (sent home by the hotkey, say).
+        const NEAR: f64 = 100.0;
+        let to = self.layout.machine_index(peer)?;
+        let p = at.offset(self.layout.machines[SELF].offset);
+        let (q, d) = self
+            .layout
+            .edges_between(SELF, to)
+            .into_iter()
+            .map(|(a, b)| {
+                let (ax, ay) = (b.x - a.x, b.y - a.y);
+                let len = ax * ax + ay * ay;
+                let t = if len > 0.0 {
+                    (((p.x - a.x) * ax + (p.y - a.y) * ay) / len).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let q = Point::new(a.x + t * ax, a.y + t * ay);
+                (q, (p.x - q.x).hypot(p.y - q.y))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))?;
+        (d <= NEAR).then(|| self.layout.to_local(SELF, q))
+    }
+
     /// The controlling computer just moved our cursor.
     pub fn note_injected(&mut self) {
         self.injected_at = Some(Instant::now());
@@ -378,7 +412,7 @@ impl Controller {
                         swallow: false,
                         actions: vec![Action::Wake { peer }],
                     },
-                    Some(Exit::Cross(to, point)) => {
+                    Some(Exit::Cross(to, point, edge)) => {
                         let peer = self.layout.machines[to.machine].id.clone();
                         let local = self.layout.to_local(to.machine, point);
                         self.state = State::Remote {
@@ -397,6 +431,10 @@ impl Controller {
                                         x: local.x,
                                         y: local.y,
                                     },
+                                },
+                                Action::Crossed {
+                                    at: edge,
+                                    arrived: false,
                                 },
                             ],
                         }
@@ -418,7 +456,7 @@ impl Controller {
             .is_none_or(|t| t.elapsed() >= TAKEOVER_QUIET);
         let crosses = matches!(
             self.find_exit(at, dx, dy),
-            Some(Exit::Cross(to, _)) if self.layout.machines[to.machine].id == by
+            Some(Exit::Cross(to, ..)) if self.layout.machines[to.machine].id == by
         );
         if !quiet || !crosses {
             return Outcome::default();
@@ -437,25 +475,25 @@ impl Controller {
         let r = self.layout.rect(from);
         let mut sides = Vec::with_capacity(2);
         if dx < 0.0 && at.x <= r.x + 0.5 {
-            sides.push((Side::Left, at.y));
+            sides.push((Side::Left, at.y, Point::new(r.x, at.y)));
         }
         if dx > 0.0 && at.x >= r.right() - 1.5 {
-            sides.push((Side::Right, at.y));
+            sides.push((Side::Right, at.y, Point::new(r.right(), at.y)));
         }
         if dy < 0.0 && at.y <= r.y + 0.5 {
-            sides.push((Side::Above, at.x));
+            sides.push((Side::Above, at.x, Point::new(at.x, r.y)));
         }
         if dy > 0.0 && at.y >= r.bottom() - 1.5 {
-            sides.push((Side::Below, at.x));
+            sides.push((Side::Below, at.x, Point::new(at.x, r.bottom())));
         }
-        sides.into_iter().find_map(|(side, along)| {
+        sides.into_iter().find_map(|(side, along, edge)| {
             let c = self.layout.neighbour(from, side, along)?;
             if c.to.machine == SELF {
                 return None;
             }
             let id = &self.layout.machines[c.to.machine].id;
             Some(if self.reachable.contains(id) {
-                Exit::Cross(c.to, c.point)
+                Exit::Cross(c.to, c.point, edge)
             } else {
                 Exit::Offline(id.clone())
             })
@@ -562,7 +600,12 @@ impl Controller {
         match crossing {
             Some(c) if c.to.machine == SELF => {
                 let warp = self.layout.to_local(SELF, c.point);
-                self.leave(on, warp, true)
+                let mut actions = self.leave(on, warp, true);
+                actions.push(Action::Crossed {
+                    at: warp,
+                    arrived: true,
+                });
+                actions
             }
             Some(c) if c.to.machine == on.machine => self.moved_to(c.to, c.point, home),
             Some(c)
@@ -747,10 +790,41 @@ mod tests {
                 },
                 Action::Release {
                     warp: Point::new(0.0, 510.0)
+                },
+                Action::Crossed {
+                    at: Point::new(0.0, 510.0),
+                    arrived: true
                 }
             ]
         );
         assert_eq!(c.active_peer(), None);
+    }
+
+    #[test]
+    fn finds_the_edge_a_peer_moved_the_cursor_across() {
+        let c = desk();
+        // The iMac is left of the MacBook: its cursor last seen a flick in from our left edge.
+        assert_eq!(
+            c.edge_towards("imac", Point::new(40.0, 300.0)),
+            Some(Point::new(0.0, 300.0))
+        );
+        // Mid-screen: it went home some other way.
+        assert_eq!(c.edge_towards("imac", Point::new(700.0, 300.0)), None);
+        assert_eq!(c.edge_towards("nobody", Point::new(0.0, 300.0)), None);
+    }
+
+    #[test]
+    fn crossing_reports_the_point_on_the_edge_itself() {
+        let mut c = desk();
+        // Half a point in from the edge still crosses; the ripple starts on the edge.
+        let out = c.handle(motion(0.4, 500.0, -3.0, 0.0));
+        assert_eq!(
+            out.actions.last(),
+            Some(&Action::Crossed {
+                at: Point::new(0.0, 500.0),
+                arrived: false
+            })
+        );
     }
 
     #[test]

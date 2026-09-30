@@ -10,6 +10,7 @@ mod keystate;
 pub mod mpris;
 mod outputs;
 pub mod player;
+pub mod ripple;
 mod uinput;
 
 use std::collections::HashSet;

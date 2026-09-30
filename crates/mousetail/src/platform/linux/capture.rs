@@ -12,6 +12,7 @@ use std::collections::HashSet;
 use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use mousetail_core::controller::{Action, Controller, Input};
@@ -52,6 +53,7 @@ use crate::platform::Edge;
 enum Cmd {
     Apply(Action),
     Edges(Vec<Edge>),
+    HideCursor,
 }
 
 pub struct Capture {
@@ -109,6 +111,12 @@ impl Capture {
 
     pub fn apply(&self, action: &Action) {
         self.send(Cmd::Apply(action.clone()));
+    }
+
+    /// Another computer's cursor just left us over an edge: hide ours where it stopped, until
+    /// this computer's own mouse moves it.
+    pub fn hide_cursor(&self) {
+        self.send(Cmd::HideCursor);
     }
 
     /// Which edges lead somewhere (changes with the arrangement and the displays).
@@ -170,6 +178,9 @@ struct Grabber {
     zones: Vec<Zone>,
     hovered: Option<usize>,
     enter_serial: u32,
+    /// Hide the cursor if it lands on a strip before then: another computer's cursor just
+    /// left over that edge (and the pointer may reach the strip after we hear so).
+    hide_until: Option<Instant>,
     pos: Point,
     buttons: HashSet<u16>,
     grab: Option<Grab>,
@@ -246,6 +257,7 @@ impl Grabber {
             zones: vec![],
             hovered: None,
             enter_serial: 0,
+            hide_until: None,
             pos: Point::default(),
             buttons: HashSet::new(),
             grab: None,
@@ -306,6 +318,7 @@ impl Grabber {
                 match cmd {
                     Cmd::Apply(a) => self.do_action(&a),
                     Cmd::Edges(e) => self.set_edges(e),
+                    Cmd::HideCursor => self.hide_cursor(),
                 }
             }
             queue.dispatch_pending(&mut self)?;
@@ -437,6 +450,19 @@ impl Grabber {
                     let _ = self.actions.send(other);
                 }
             }
+        }
+    }
+
+    /// The pointer rests on our strip where another computer's cursor left us, so we choose
+    /// its image: none. The compositor shows it again once it's moved off the strip, and
+    /// pushing on across still works.
+    fn hide_cursor(&mut self) {
+        match (&self.pointer, self.hovered) {
+            (Some(pointer), Some(_)) if self.grab.is_none() => {
+                pointer.set_cursor(self.enter_serial, None, 0, 0);
+                self.hide_until = None;
+            }
+            _ => self.hide_until = Some(Instant::now() + Duration::from_secs(1)),
         }
     }
 
@@ -759,6 +785,9 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Grabber {
                 if let Some(i) = s.hovered {
                     let o = s.zones[i].origin;
                     s.pos = Point::new(o.x + surface_x, o.y + surface_y);
+                    if s.hide_until.take().is_some_and(|t| Instant::now() < t) {
+                        s.hide_cursor();
+                    }
                 }
             }
             wl_pointer::Event::Leave { .. } => {

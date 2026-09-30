@@ -98,6 +98,11 @@ final class AppModel: ObservableObject {
         await refresh()
     }
 
+    func setRipple(_ on: Bool) async {
+        _ = try? await client.call(["cmd": "set_setting", "key": "ripple", "value": on])
+        await refresh()
+    }
+
     func setAudio(_ on: Bool) async {
         _ = try? await client.call(["cmd": "set_setting", "key": "audio", "value": on])
         await refresh()

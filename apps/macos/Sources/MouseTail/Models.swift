@@ -58,6 +58,7 @@ struct Settings: Codable, Equatable {
     var clipboard: Bool
     var clipboardMaxBytes: Int
     var audio: Bool?
+    var ripple: Bool?
 }
 
 struct PeerStatus: Codable, Identifiable, Equatable {

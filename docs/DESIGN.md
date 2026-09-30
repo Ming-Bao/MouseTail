@@ -200,6 +200,21 @@ at the Omarchy lock screen):
   also ships a clipboard-history plugin; synced entries will show up there naturally.
 - Size cap (default 10 MB) and an on/off switch.
 
+## Crossing ripple
+
+A water ripple spreads from the edge where the cursor crosses: a full one where it arrives, a
+smaller one where it leaves. Only for show, on by default, with an on/off switch (`ripple`).
+
+- Each machine draws its own side, from what it already knows: the controller's `Crossed`
+  action (its own cursor leaving or coming home, at the exact edge point), and `Enter`/`Leave`
+  when it's being controlled (snapped onto the edge facing the controlling computer, since the
+  last injected position can be a fast flick short of it). Nothing new crosses the network.
+- The shape is shared (`core::ripple`) so both platforms draw the same thing. macOS: a
+  click-through window per display, drawn with Metal, on screen only while rippling (the
+  daemon's main thread runs the run loop). Linux: a click-through overlay-layer surface on the
+  monitor, drawn on the CPU into shared memory, repainting only the square the waves reach.
+- `mousetail ripple <x> <y>` draws one without the daemon, for development.
+
 ## Sound
 
 Sound goes to the computer you're sitting at: of two connected computers, whichever was last

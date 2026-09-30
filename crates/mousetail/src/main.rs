@@ -25,7 +25,7 @@ Usage:
   mousetail place <machine> <side> [n]  Put a machine left/right/above/below display n
                                         (default: the main display)
   mousetail release                     Bring the cursor back to this machine
-  mousetail set <clipboard|audio|updates> <on|off>  Change a setting
+  mousetail set <clipboard|audio|updates|ripple> <on|off>  Change a setting
   mousetail update                      Install the latest release now (Linux)
   mousetail watch                       Print status as JSON, one line per change
   mousetail --version                   Show the version
@@ -120,7 +120,7 @@ async fn run() -> anyhow::Result<()> {
         }
         "set" => {
             let key = arg(1)
-                .context("which setting? (clipboard, audio, updates)")?
+                .context("which setting? (clipboard, audio, updates, ripple)")?
                 .to_string();
             let value = match arg(2).context("on or off?")? {
                 "on" | "true" | "yes" => serde_json::Value::Bool(true),
@@ -131,6 +131,18 @@ async fn run() -> anyhow::Result<()> {
             Ok(())
         }
         "watch" => watch(&paths).await,
+        // For development: draw one crossing ripple here, at x y (local coordinates).
+        "ripple" => {
+            let number = |i: usize| -> anyhow::Result<f64> {
+                Ok(arg(i).context("where? ripple <x> <y>")?.parse()?)
+            };
+            let at = mousetail_core::layout::Point::new(number(1)?, number(2)?);
+            let ripples = platform::Ripples::start()?;
+            ripples.show(at, mousetail_core::ripple::ARRIVING);
+            let life = std::time::Duration::from_secs_f32(mousetail_core::ripple::LIFETIME);
+            tokio::time::sleep(life + std::time::Duration::from_millis(200)).await;
+            Ok(())
+        }
         "update" => {
             if cfg!(target_os = "macos") {
                 anyhow::bail!(

@@ -135,7 +135,14 @@ struct Shared {
     hides: AtomicU32,
     /// When the cursor was last checked while grabbed (ms since the Unix epoch).
     checked: AtomicU64,
+    /// When the cursor was hidden because another computer's cursor left us (ms since the
+    /// Unix epoch; 0 = not hidden for that). It shows again once this Mac's own mouse moves.
+    parked: AtomicU64,
 }
+
+/// Injected input this soon after parking is our own move onto the edge, not a controller
+/// coming back.
+const PARK_SETTLE_MS: u64 = 250;
 
 static SHARED: OnceLock<Shared> = OnceLock::new();
 
@@ -159,6 +166,7 @@ impl Capture {
             tap: AtomicPtr::new(ptr::null_mut()),
             hides: AtomicU32::new(0),
             checked: AtomicU64::new(0),
+            parked: AtomicU64::new(0),
         });
         anyhow::ensure!(
             shared.tap.load(Ordering::SeqCst).is_null(),
@@ -184,6 +192,17 @@ impl Capture {
 
     pub fn supported() -> bool {
         true
+    }
+
+    /// Another computer's cursor just left us over an edge: hide ours, so only theirs is on
+    /// show, until this Mac's own mouse moves (or a controller comes back).
+    pub fn hide_cursor(&self) {
+        let Some(shared) = SHARED.get() else { return };
+        if !shared.grabbed.load(Ordering::SeqCst)
+            && shared.parked.swap(now_ms().max(1), Ordering::SeqCst) == 0
+        {
+            hide_cursor(shared);
+        }
     }
 
     /// The event tap sees the whole screen, so it doesn't need to be told about edges.
@@ -280,9 +299,20 @@ extern "C" fn tap_callback(
     }
     // Input we injected ourselves (another computer controlling this Mac) isn't the local
     // user: never let it cross edges or be forwarded.
-    if unsafe { CGEventGetIntegerValueField(event, EVENT_SOURCE_USER_DATA) }
-        == super::macos_emulate::MOUSETAIL_EVENT
+    let injected = unsafe { CGEventGetIntegerValueField(event, EVENT_SOURCE_USER_DATA) }
+        == super::macos_emulate::MOUSETAIL_EVENT;
+    // Hidden since another computer's cursor left: show it for whoever's moving it now.
+    let parked = shared.parked.load(Ordering::SeqCst);
+    if parked != 0
+        && etype != KEY_DOWN
+        && etype != KEY_UP
+        && etype != FLAGS_CHANGED
+        && (!injected || now_ms().saturating_sub(parked) > PARK_SETTLE_MS)
+        && shared.parked.swap(0, Ordering::SeqCst) != 0
     {
+        show_cursor(shared);
+    }
+    if injected {
         return event;
     }
     let grabbed = shared.grabbed.load(Ordering::SeqCst);
@@ -428,19 +458,7 @@ fn apply(action: &Action) {
                     y: warp.y,
                 });
                 CGAssociateMouseAndMouseCursorPosition(true);
-                allow_background_cursor();
-                for _ in 0..shared.hides.swap(0, Ordering::SeqCst) {
-                    CGDisplayShowCursor(CGMainDisplayID());
-                }
-                // If macOS reset the count under us these overshoot, but the next grab's check
-                // re-hides. If it still says hidden, keep going (bounded) so it never stays
-                // invisible here.
-                for _ in 0..8 {
-                    if CGCursorIsVisible() {
-                        break;
-                    }
-                    CGDisplayShowCursor(CGMainDisplayID());
-                }
+                show_cursor(shared);
             }
             _ => {}
         }
@@ -462,6 +480,24 @@ fn allow_background_cursor() {
     }
 }
 
+fn show_cursor(shared: &Shared) {
+    allow_background_cursor();
+    unsafe {
+        for _ in 0..shared.hides.swap(0, Ordering::SeqCst) {
+            CGDisplayShowCursor(CGMainDisplayID());
+        }
+        // If macOS reset the count under us these overshoot, but the next grab's check
+        // re-hides. If it still says hidden, keep going (bounded) so it never stays invisible
+        // here.
+        for _ in 0..8 {
+            if CGCursorIsVisible() {
+                break;
+            }
+            CGDisplayShowCursor(CGMainDisplayID());
+        }
+    }
+}
+
 fn hide_cursor(shared: &Shared) {
     allow_background_cursor();
     unsafe { CGDisplayHideCursor(CGMainDisplayID()) };
@@ -471,10 +507,14 @@ fn hide_cursor(shared: &Shared) {
 /// macOS occasionally shows the cursor again while it's on another computer (another app
 /// setting its cursor, the Dock, display changes), leaving a frozen cursor on each screen.
 /// Check a few times a second while grabbed and hide it again if so.
-fn keep_cursor_hidden(shared: &Shared) {
-    let now = SystemTime::now()
+fn now_ms() -> u64 {
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis() as u64);
+        .map_or(0, |d| d.as_millis() as u64)
+}
+
+fn keep_cursor_hidden(shared: &Shared) {
+    let now = now_ms();
     let last = shared.checked.load(Ordering::Relaxed);
     if now.saturating_sub(last) < 100
         || shared

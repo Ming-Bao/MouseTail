@@ -50,6 +50,10 @@ struct MenuContent: View {
                     get: { status.settings.clipboard },
                     set: { on in Task { await model.setClipboard(on) } }
                 ))
+                SettingRow("Ripple when crossing", systemImage: "water.waves", isOn: Binding(
+                    get: { status.settings.ripple ?? true },
+                    set: { on in Task { await model.setRipple(on) } }
+                ))
                 SettingRow("Open at login", systemImage: "power", isOn: Binding(
                     get: { model.openAtLogin },
                     set: { model.openAtLogin = $0 }

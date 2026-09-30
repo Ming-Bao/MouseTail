@@ -27,6 +27,7 @@ use mousetail_core::proto::{
     MediaKey, Message, Motion, PROTOCOL_VERSION, Platform,
 };
 use mousetail_core::quinn::{Connection, Endpoint, RecvStream};
+use mousetail_core::ripple;
 use mousetail_core::update;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot, watch};
@@ -147,6 +148,8 @@ pub struct Node {
     audio_busy: Arc<Mutex<()>>,
     /// Sends this machine's media controls to the computer whose sound is playing here.
     now_playing: Option<platform::NowPlaying>,
+    /// Draws the ripple where the cursor crosses (not everywhere can).
+    ripples: Option<platform::Ripples>,
     listening: Mutex<Listening>,
     /// When another computer last controlled this one (its input isn't someone sitting here).
     last_controlled: Mutex<Option<Instant>>,
@@ -237,6 +240,8 @@ struct Target {
     /// connection, whose count starts again.
     last_seq: u64,
     seq_from: Option<String>,
+    /// Where we last put the active controller's cursor (local coordinates).
+    at: Point,
 }
 
 impl Node {
@@ -296,6 +301,9 @@ impl Node {
             audio_out: Mutex::new(None),
             audio_busy: Arc::default(),
             now_playing,
+            ripples: platform::Ripples::start()
+                .inspect_err(|e| debug!("no crossing ripple: {e:#}"))
+                .ok(),
             listening: Mutex::default(),
             last_controlled: Mutex::new(None),
             me: OnceLock::new(),
@@ -371,6 +379,7 @@ impl Node {
                         remap_active: false,
                         last_seq: 0,
                         seq_from: None,
+                        at: Point::default(),
                     }));
                     info!("accepting input from other computers");
                     self.announce();
@@ -983,7 +992,23 @@ impl Node {
                     self.settle.send_replace(Some((peer, motion)));
                 }
                 Action::Wake { peer } => self.wake(&peer),
+                Action::Crossed { at, arrived } => self.ripple(at, arrived),
             }
+        }
+    }
+
+    /// The ripple where the cursor crossed an edge here (local coordinates), unless it's
+    /// been turned off.
+    fn ripple(&self, at: Point, arrived: bool) {
+        if let Some(r) = &self.ripples
+            && self.config.lock().unwrap().settings.ripple
+        {
+            let strength = if arrived {
+                ripple::ARRIVING
+            } else {
+                ripple::LEAVING
+            };
+            r.show(at, strength);
         }
     }
 
@@ -1087,6 +1112,7 @@ impl Node {
             if fresh {
                 t.last_seq = motion.seq;
                 t.emulator.motion(motion.x, motion.y);
+                t.at = Point::new(motion.x, motion.y);
             }
             fresh
         };
@@ -1192,11 +1218,37 @@ impl Node {
             }
             Message::Leave => {
                 // The cursor is leaving us: our clipboard goes with it.
-                let was_active = self
-                    .target
-                    .get()
-                    .is_some_and(|t| t.lock().unwrap().active.as_deref() == Some(id));
+                let was_at = self.target.get().and_then(|t| {
+                    let t = t.lock().unwrap();
+                    (t.active.as_deref() == Some(id)).then_some(t.at)
+                });
+                let was_active = was_at.is_some();
                 self.on_input(id, &peer, Message::Leave);
+                // Only if it left over the edge between us, not sent home some other way.
+                let edge =
+                    was_at.and_then(|at| self.controller.lock().unwrap().edge_towards(id, at));
+                if let Some(edge) = edge {
+                    self.ripple(edge, false);
+                    // Only one cursor on show: theirs is wherever it went. Ours goes to where
+                    // it crossed (the last move before crossing can stop well short of the
+                    // edge), which is on the edge strip, where capture can hide it.
+                    let inside = self
+                        .displays
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .map(|d| d.rect.clamp(edge))
+                        .min_by(|a, b| {
+                            let far = |p: &Point| (p.x - edge.x).hypot(p.y - edge.y);
+                            far(a).total_cmp(&far(b))
+                        });
+                    if let (Some(inside), Some(t)) = (inside, self.target.get()) {
+                        t.lock().unwrap().emulator.motion(inside.x, inside.y);
+                    }
+                    if let Some(c) = self.capture.get() {
+                        c.hide_cursor();
+                    }
+                }
                 if was_active {
                     self.controller.lock().unwrap().set_controlled_by(None);
                     self.push_clipboard(id);
@@ -1206,7 +1258,7 @@ impl Node {
                 let actions = self.controller.lock().unwrap().sent_home_by(id);
                 self.apply_actions(actions);
             }
-            Message::Enter { .. } if self.target.get().is_some() => {
+            Message::Enter { x, y } if self.target.get().is_some() => {
                 // Being controlled: our own cursor comes home if it's off on another computer
                 // (perhaps this one: its own mouse took the cursor back, or we both crossed at
                 // once), and our capture stands down until they leave.
@@ -1218,7 +1270,13 @@ impl Node {
                     active.filter(|a| a != id)
                 });
                 self.on_input(id, &peer, msg);
-                self.controller.lock().unwrap().note_injected();
+                let at = Point::new(x, y);
+                let edge = {
+                    let mut c = self.controller.lock().unwrap();
+                    c.note_injected();
+                    c.edge_towards(id, at)
+                };
+                self.ripple(edge.unwrap_or(at), true);
                 if let Some(replaced) = replaced {
                     self.send(&replaced, Message::Leave);
                 }
@@ -1251,11 +1309,13 @@ impl Node {
                 }
                 platform::on_enter();
                 t.emulator.motion(x, y);
+                t.at = Point::new(x, y);
             }
             _ if t.active.as_deref() != Some(id) => {}
             Message::Leave => t.leave(),
             Message::Button { code, down, x, y } => {
                 t.emulator.motion(x, y);
+                t.at = Point::new(x, y);
                 for (code, down) in t.map(code, down) {
                     t.emulator.button_or_key(code, down);
                 }
@@ -2271,6 +2331,7 @@ impl Node {
             ("clipboard", Value::Bool(b)) => c.settings.clipboard = *b,
             ("audio", Value::Bool(b)) => c.settings.audio = *b,
             ("updates", Value::Bool(b)) => c.settings.updates = *b,
+            ("ripple", Value::Bool(b)) => c.settings.ripple = *b,
             _ => result = Err(format!("unknown setting {key:?}")),
         });
         result

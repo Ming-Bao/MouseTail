@@ -27,6 +27,7 @@ Panel {
   readonly property var pairingCode: status.pairing_code || null
   readonly property bool clipboard: status.settings ? status.settings.clipboard === true : true
   readonly property bool audio: status.settings ? status.settings.audio !== false : true
+  readonly property bool ripple: status.settings ? status.settings.ripple !== false : true
 
   readonly property string summary: {
     if (!running) return "Not running"
@@ -75,6 +76,10 @@ Panel {
 
   function setClipboard(on) {
     runSetter([binary, "set", "clipboard", on ? "on" : "off"])
+  }
+
+  function setRipple(on) {
+    runSetter([binary, "set", "ripple", on ? "on" : "off"])
   }
 
   function setAudio(on) {
@@ -304,6 +309,12 @@ Panel {
             label: "Share clipboard"
             checked: root.clipboard
             onToggled: root.setClipboard(!root.clipboard)
+          }
+
+          SettingRow {
+            label: "Ripple when crossing"
+            checked: root.ripple
+            onToggled: root.setRipple(!root.ripple)
           }
         }
 

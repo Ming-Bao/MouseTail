@@ -49,6 +49,8 @@ pub struct Settings {
     pub audio: bool,
     /// Install new releases automatically (Linux; the Mac app has its own setting).
     pub updates: bool,
+    /// A ripple where the cursor crosses to or from another computer.
+    pub ripple: bool,
 }
 
 impl Settings {
@@ -67,6 +69,7 @@ impl Default for Settings {
             clipboard_max_bytes: 10 * 1024 * 1024,
             audio: true,
             updates: true,
+            ripple: true,
         }
     }
 }

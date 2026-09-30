@@ -6,9 +6,10 @@
 
 use std::ffi::c_void;
 use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::thread;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use core_foundation::base::TCFType;
@@ -58,6 +59,7 @@ unsafe extern "C" {
     fn CGWarpMouseCursorPosition(point: CGPoint) -> i32;
     fn CGDisplayHideCursor(display: u32) -> i32;
     fn CGDisplayShowCursor(display: u32) -> i32;
+    fn CGCursorIsVisible() -> bool;
     fn CGMainDisplayID() -> u32;
     fn CGGetOnlineDisplayList(max: u32, ids: *mut u32, count: *mut u32) -> i32;
     fn CGDisplayMirrorsDisplay(display: u32) -> u32;
@@ -128,6 +130,11 @@ struct Shared {
     actions: UnboundedSender<Action>,
     grabbed: AtomicBool,
     tap: AtomicPtr<c_void>,
+    /// Hides we owe a show for: macOS sometimes shows the cursor again behind our back, so a
+    /// grab can take several hides.
+    hides: AtomicU32,
+    /// When the cursor was last checked while grabbed (ms since the Unix epoch).
+    checked: AtomicU64,
 }
 
 static SHARED: OnceLock<Shared> = OnceLock::new();
@@ -150,6 +157,8 @@ impl Capture {
             actions,
             grabbed: AtomicBool::new(false),
             tap: AtomicPtr::new(ptr::null_mut()),
+            hides: AtomicU32::new(0),
+            checked: AtomicU64::new(0),
         });
         anyhow::ensure!(
             shared.tap.load(Ordering::SeqCst).is_null(),
@@ -168,15 +177,8 @@ impl Capture {
             if !source.is_null() {
                 CGEventSourceSetLocalEventsSuppressionInterval(source, 0.0);
             }
-            let key = CFString::from_static_string("SetsCursorInBackground");
-            let cid = _CGSDefaultConnection();
-            CGSSetConnectionProperty(
-                cid,
-                cid,
-                key.as_concrete_TypeRef() as *const c_void,
-                CFBoolean::true_value().as_concrete_TypeRef() as *const c_void,
-            );
         }
+        allow_background_cursor();
         Ok(Self)
     }
 
@@ -284,6 +286,9 @@ extern "C" fn tap_callback(
         return event;
     }
     let grabbed = shared.grabbed.load(Ordering::SeqCst);
+    if grabbed {
+        keep_cursor_hidden(shared);
+    }
     let inputs = unsafe { to_inputs(etype, event, grabbed) };
     if etype != MOUSE_MOVED {
         tracing::trace!("tap event {etype} grabbed={grabbed} -> {inputs:?}");
@@ -415,7 +420,7 @@ fn apply(action: &Action) {
         match action {
             Action::Grab if !shared.grabbed.swap(true, Ordering::SeqCst) => {
                 CGAssociateMouseAndMouseCursorPosition(false);
-                CGDisplayHideCursor(CGMainDisplayID());
+                hide_cursor(shared);
             }
             Action::Release { warp } if shared.grabbed.swap(false, Ordering::SeqCst) => {
                 CGWarpMouseCursorPosition(CGPoint {
@@ -423,10 +428,65 @@ fn apply(action: &Action) {
                     y: warp.y,
                 });
                 CGAssociateMouseAndMouseCursorPosition(true);
-                CGDisplayShowCursor(CGMainDisplayID());
+                allow_background_cursor();
+                for _ in 0..shared.hides.swap(0, Ordering::SeqCst) {
+                    CGDisplayShowCursor(CGMainDisplayID());
+                }
+                // If macOS reset the count under us these overshoot, but the next grab's check
+                // re-hides. If it still says hidden, keep going (bounded) so it never stays
+                // invisible here.
+                for _ in 0..8 {
+                    if CGCursorIsVisible() {
+                        break;
+                    }
+                    CGDisplayShowCursor(CGMainDisplayID());
+                }
             }
             _ => {}
         }
+    }
+}
+
+/// Let this background process hide the cursor. Private but long-standing (Synergy, Barrier
+/// and Deskflow use it); set before every hide and show since macOS can drop it.
+fn allow_background_cursor() {
+    let key = CFString::from_static_string("SetsCursorInBackground");
+    unsafe {
+        let cid = _CGSDefaultConnection();
+        CGSSetConnectionProperty(
+            cid,
+            cid,
+            key.as_concrete_TypeRef() as *const c_void,
+            CFBoolean::true_value().as_concrete_TypeRef() as *const c_void,
+        );
+    }
+}
+
+fn hide_cursor(shared: &Shared) {
+    allow_background_cursor();
+    unsafe { CGDisplayHideCursor(CGMainDisplayID()) };
+    shared.hides.fetch_add(1, Ordering::SeqCst);
+}
+
+/// macOS occasionally shows the cursor again while it's on another computer (another app
+/// setting its cursor, the Dock, display changes), leaving a frozen cursor on each screen.
+/// Check a few times a second while grabbed and hide it again if so.
+fn keep_cursor_hidden(shared: &Shared) {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64);
+    let last = shared.checked.load(Ordering::Relaxed);
+    if now.saturating_sub(last) < 100
+        || shared
+            .checked
+            .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+    {
+        return;
+    }
+    if unsafe { CGCursorIsVisible() } {
+        tracing::debug!("cursor reappeared while remote; hiding it again");
+        hide_cursor(shared);
     }
 }
 

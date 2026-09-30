@@ -9,6 +9,7 @@
 //! actions, which keeps it testable and lets the backend decide swallowing inline.
 
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 use crate::keys::ev;
 use crate::layout::{DisplayRef, Layout, Machine, Point, Side};
@@ -78,6 +79,11 @@ enum State {
 
 const SELF: usize = 0;
 
+/// How long injected input must have been still before local motion counts as the user
+/// reaching for this computer's own mouse. On Linux we can't otherwise tell injected pointer
+/// motion from real motion.
+const TAKEOVER_QUIET: Duration = Duration::from_millis(250);
+
 enum Exit {
     Cross(DisplayRef, Point),
     Offline(String),
@@ -104,9 +110,14 @@ pub struct Controller {
     local_held: HashSet<u16>,
     remote_held: HashSet<u16>,
     seq: u64,
-    /// While another computer is controlling this one, local input stays local: an injected
-    /// cursor reaching an edge must not bounce off to a third machine.
-    suspended: bool,
+    /// The computer controlling this one, if any. Local input stays local then (an injected
+    /// cursor reaching an edge must not bounce off to a third machine), except that this
+    /// computer's own mouse can take the cursor back to the controlling computer.
+    controlled_by: Option<String>,
+    /// When the controlling computer last moved our cursor.
+    injected_at: Option<Instant>,
+    /// When the cursor last crossed on to another computer.
+    entered_at: Option<Instant>,
 }
 
 impl Controller {
@@ -125,7 +136,9 @@ impl Controller {
             local_held: HashSet::new(),
             remote_held: HashSet::new(),
             seq: 0,
-            suspended: false,
+            controlled_by: None,
+            injected_at: None,
+            entered_at: None,
         }
     }
 
@@ -295,13 +308,41 @@ impl Controller {
         }
     }
 
-    pub fn set_suspended(&mut self, suspended: bool) {
-        self.suspended = suspended;
+    /// Another computer has started (`Some`) or stopped (`None`) controlling this one. If the
+    /// cursor was away on some computer, it comes home first: the other side has taken over.
+    pub fn set_controlled_by(&mut self, by: Option<&str>) -> Vec<Action> {
+        self.controlled_by = by.map(str::to_string);
+        self.injected_at = None;
+        let Some(by) = by else { return vec![] };
+        match self.state {
+            State::Remote { on, home, .. } => {
+                let id = &self.layout.machines[on.machine].id;
+                // The computer our cursor is on crossing into us is either its own mouse taking
+                // the cursor back (only possible once we'd been still there a while; it already
+                // has the cursor, so no Leave) or both of us crossing at the same moment (tell
+                // it, so we both end up home).
+                let tell = if id == by {
+                    self.entered_at
+                        .is_some_and(|t| t.elapsed() < TAKEOVER_QUIET)
+                } else {
+                    self.reachable.contains(id)
+                };
+                self.leave(on, home, tell)
+            }
+            State::Local => vec![],
+        }
+    }
+
+    /// The controlling computer just moved our cursor.
+    pub fn note_injected(&mut self) {
+        self.injected_at = Some(Instant::now());
     }
 
     pub fn handle(&mut self, input: Input) -> Outcome {
-        if self.suspended && self.state == State::Local {
-            return Outcome::default();
+        if let Some(by) = &self.controlled_by
+            && self.state == State::Local
+        {
+            return self.handle_controlled(by.clone(), input);
         }
         match self.state {
             State::Local => self.handle_local(input),
@@ -345,6 +386,7 @@ impl Controller {
                             pos: point,
                             home: at,
                         };
+                        self.entered_at = Some(Instant::now());
                         Outcome {
                             swallow: true,
                             actions: vec![
@@ -363,6 +405,26 @@ impl Controller {
                 }
             }
         }
+    }
+
+    /// Being controlled: only a push from this computer's own mouse towards the controlling
+    /// computer does anything, taking the cursor over there.
+    fn handle_controlled(&mut self, by: String, input: Input) -> Outcome {
+        let Input::Motion { at, dx, dy, .. } = input else {
+            return Outcome::default();
+        };
+        let quiet = self
+            .injected_at
+            .is_none_or(|t| t.elapsed() >= TAKEOVER_QUIET);
+        let crosses = matches!(
+            self.find_exit(at, dx, dy),
+            Some(Exit::Cross(to, _)) if self.layout.machines[to.machine].id == by
+        );
+        if !quiet || !crosses {
+            return Outcome::default();
+        }
+        self.controlled_by = None;
+        self.handle_local(input)
     }
 
     /// If the local cursor is pushing against an edge that leads to another computer, where
@@ -518,6 +580,7 @@ impl Controller {
                     pos: c.point,
                     home,
                 };
+                self.entered_at = Some(Instant::now());
                 vec![
                     Action::Send {
                         peer: from,
@@ -773,10 +836,70 @@ mod tests {
     #[test]
     fn no_crossing_while_being_controlled() {
         let mut c = desk();
-        c.set_suspended(true);
+        c.set_peer(
+            "third",
+            vec![display("t", 0.0, 0.0, 800.0, 600.0, true)],
+            Point::default(),
+        );
+        let offset = c.offset_beside("third", Side::Right, None).unwrap();
+        c.set_peer(
+            "third",
+            vec![display("t", 0.0, 0.0, 800.0, 600.0, true)],
+            offset,
+        );
+        c.set_reachable("third", true);
+        c.set_controlled_by(Some("imac"));
+        // Never on to a third computer.
+        assert_eq!(
+            c.handle(motion(1511.0, 500.0, 3.0, 0.0)),
+            Outcome::default()
+        );
+        // Nor back to the controlling one while it's still moving our cursor.
+        c.note_injected();
         assert_eq!(c.handle(motion(0.0, 500.0, -3.0, 0.0)), Outcome::default());
-        c.set_suspended(false);
+        c.set_controlled_by(None);
         enter(&mut c);
+    }
+
+    #[test]
+    fn own_mouse_takes_the_cursor_back_to_the_controlling_computer() {
+        let mut c = desk();
+        c.set_controlled_by(Some("imac"));
+        c.injected_at = Instant::now().checked_sub(TAKEOVER_QUIET);
+        enter(&mut c);
+        assert_eq!(c.active_peer(), Some("imac"));
+        // Now controlling it, not controlled by it: pushing back brings the cursor home.
+        let out = c.handle(motion(0.0, 500.0, 150.0, 0.0));
+        assert!(
+            out.actions
+                .iter()
+                .any(|a| matches!(a, Action::Release { .. }))
+        );
+    }
+
+    #[test]
+    fn being_taken_over_brings_the_cursor_home() {
+        let mut c = desk();
+        enter(&mut c);
+        // Both crossed at once: tell it, so it comes home too.
+        let actions = c.set_controlled_by(Some("imac"));
+        assert!(actions.contains(&Action::Send {
+            peer: "imac".into(),
+            msg: Message::Leave
+        }));
+        c.set_controlled_by(None);
+
+        enter(&mut c);
+        c.entered_at = Instant::now().checked_sub(TAKEOVER_QUIET);
+        // The iMac's own mouse took the cursor back to us: no Leave for it, just come home.
+        assert_eq!(
+            c.set_controlled_by(Some("imac")),
+            vec![Action::Release {
+                warp: Point::new(0.0, 500.0)
+            }]
+        );
+        assert_eq!(c.active_peer(), None);
+        assert_eq!(c.handle(motion(10.0, 500.0, 3.0, 0.0)), Outcome::default());
     }
 
     #[test]

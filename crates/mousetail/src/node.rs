@@ -922,7 +922,7 @@ impl Node {
             active
         });
         if was_controlling_us {
-            self.controller.lock().unwrap().set_suspended(false);
+            self.controller.lock().unwrap().set_controlled_by(None);
         }
         self.pairing.lock().unwrap().remove(id);
     }
@@ -953,6 +953,13 @@ impl Node {
                     if entering {
                         debug!("cursor → {peer}");
                         self.claim_sound(&peer);
+                        // Taking the cursor back to the computer that was controlling us.
+                        if let Some(t) = self.target.get() {
+                            let mut t = t.lock().unwrap();
+                            if t.active.as_deref() == Some(peer.as_str()) {
+                                t.leave();
+                            }
+                        }
                         // Our clipboard travels with the cursor. After Enter on the same
                         // ordered stream, so the other side knows it's part of the crossing.
                         self.push_clipboard(&peer);
@@ -1073,12 +1080,18 @@ impl Node {
         if !self.is_current(id, conn) {
             return;
         }
-        if let Some(t) = self.target.get() {
+        let Some(t) = self.target.get() else { return };
+        let moved = {
             let mut t = t.lock().unwrap();
-            if t.active.as_deref() == Some(id) && motion.seq > t.last_seq {
+            let fresh = t.active.as_deref() == Some(id) && motion.seq > t.last_seq;
+            if fresh {
                 t.last_seq = motion.seq;
                 t.emulator.motion(motion.x, motion.y);
             }
+            fresh
+        };
+        if moved {
+            self.controller.lock().unwrap().note_injected();
         }
     }
 
@@ -1185,7 +1198,7 @@ impl Node {
                     .is_some_and(|t| t.lock().unwrap().active.as_deref() == Some(id));
                 self.on_input(id, &peer, Message::Leave);
                 if was_active {
-                    self.controller.lock().unwrap().set_suspended(false);
+                    self.controller.lock().unwrap().set_controlled_by(None);
                     self.push_clipboard(id);
                 }
                 // From the computer our cursor is on: someone else has taken it over (or it
@@ -1195,14 +1208,9 @@ impl Node {
             }
             Message::Enter { .. } if self.target.get().is_some() => {
                 // Being controlled: our own cursor comes home if it's off on another computer
-                // (perhaps this one, if we both crossed at once), and our capture stands down
-                // until they leave.
-                let actions = {
-                    let mut controller = self.controller.lock().unwrap();
-                    let actions = controller.release();
-                    controller.set_suspended(true);
-                    actions
-                };
+                // (perhaps this one: its own mouse took the cursor back, or we both crossed at
+                // once), and our capture stands down until they leave.
+                let actions = self.controller.lock().unwrap().set_controlled_by(Some(id));
                 self.apply_actions(actions);
                 // Whoever was controlling us is replaced: tell them, so they come home.
                 let replaced = self.target.get().and_then(|t| {
@@ -1210,11 +1218,18 @@ impl Node {
                     active.filter(|a| a != id)
                 });
                 self.on_input(id, &peer, msg);
+                self.controller.lock().unwrap().note_injected();
                 if let Some(replaced) = replaced {
                     self.send(&replaced, Message::Leave);
                 }
             }
-            input => self.on_input(id, &peer, input),
+            input => {
+                let moves = matches!(input, Message::Button { .. });
+                self.on_input(id, &peer, input);
+                if moves {
+                    self.controller.lock().unwrap().note_injected();
+                }
+            }
         }
     }
 

@@ -37,6 +37,8 @@ struct Machine: Codable, Identifiable, Equatable {
     var name: String
     var this: Bool
     var connected: Bool
+    /// Paused: stays paired, but the cursor doesn't cross to it.
+    var paused: Bool?
     var displays: [Display]
     var offset: Point?
 
@@ -71,6 +73,8 @@ struct PeerStatus: Codable, Identifiable, Equatable {
     var version: String?
     /// "here" (its sound plays on this Mac) or "there" (this Mac's sound plays on it).
     var sound: String?
+    /// Still paired, but nothing crosses until it's resumed.
+    var paused: Bool?
 }
 
 /// A code this Mac is showing because another computer asked to pair.

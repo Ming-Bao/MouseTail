@@ -153,6 +153,13 @@ pub enum Message {
         wanted: bool,
         updated: u64,
     },
+    /// "The link between us is paused" (or resumed), so pausing on either computer pauses
+    /// both. `updated` is when a person chose it (Unix ms); the newer choice wins. Peers that
+    /// predate it just see us stop taking input (`Hello::can_be_controlled`).
+    Paused {
+        paused: bool,
+        updated: u64,
+    },
 }
 
 /// Media controls, as the headphones or keyboard sent them.

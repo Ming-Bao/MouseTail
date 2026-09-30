@@ -80,6 +80,12 @@ final class AppModel: ObservableObject {
         await refreshLayout()
     }
 
+    func setPaused(_ peer: PeerStatus, _ paused: Bool) async {
+        _ = try? await client.call(["cmd": "set_paused", "peer": peer.id, "paused": paused])
+        await refresh()
+        await refreshLayout()
+    }
+
     // MARK: Layout and settings
 
     /// Drop a machine at a layout position; returns where it snapped to.

@@ -258,6 +258,11 @@ thread runs the run loop and the async runtime runs on another thread.
   notification on screen for every try.
 - Subsequent connections: mutual TLS with the pinned certificates. Unknown peers are rejected.
 - Unpairing on either computer unpairs both (`NotPaired`).
+- Pausing keeps the pairing and the connection, but nothing crosses: the paused computer
+  leaves the layout, and input, clipboards and sound from it are ignored. The choice is
+  stored per peer and shared (`Paused { paused, updated }`, newest wins, as for placement),
+  so pausing or resuming on either computer does both. Releases before `Paused` just see
+  `can_be_controlled: false` in a fresh `Hello`.
 
 ### Who connects to whom
 
@@ -328,7 +333,7 @@ practice the iMac dials the Mac and the Omarchy install needs no firewall change
 
 `$XDG_RUNTIME_DIR/mousetail.sock` (Linux) or `~/Library/Application Support/MouseTail/
 mousetail.sock` (macOS), mode 0600. Requests: `status`, `layout`, `pair`, `pair_code`,
-`unpair`, `place_at` (drop + snap), `place`, `set_setting`, `release`, `update`, `shutdown`.
+`unpair`, `set_paused`, `place_at` (drop + snap), `place`, `set_setting`, `release`, `update`, `shutdown`.
 `mousetail watch` streams status as JSON lines for status bars. Only one daemon runs per user
 (a lock on `mousetail.lock` beside the config); the Mac app starts its own with
 `--exit-with-parent` so it stops with the app, crash or not.

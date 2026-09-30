@@ -97,7 +97,7 @@ struct ArrangeView: View {
             DisplayTile(
                 machine: machine,
                 display: display,
-                kind: machine.this ? .thisMac : (machine.connected ? .other : .offline),
+                kind: machine.this ? .thisMac : (machine.connected && machine.paused != true ? .other : .offline),
                 lifted: dragging == machine.id
             )
             .frame(width: frame.width, height: frame.height)

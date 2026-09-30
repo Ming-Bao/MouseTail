@@ -30,6 +30,11 @@ pub enum Request {
     Unpair {
         peer: String,
     },
+    /// Pause or resume a paired machine: nothing crosses while it's paused, but it stays paired.
+    SetPaused {
+        peer: String,
+        paused: bool,
+    },
     Place {
         peer: String,
         side: Side,
@@ -104,6 +109,9 @@ async fn handle(node: &Arc<Node>, req: Request) -> Value {
             .await
             .map(|()| json!({})),
         Request::Unpair { peer } => node.unpair(&peer).map(|name| json!({"name": name})),
+        Request::SetPaused { peer, paused } => node
+            .set_paused(&peer, paused)
+            .map(|name| json!({"name": name})),
         Request::Place {
             peer,
             side,

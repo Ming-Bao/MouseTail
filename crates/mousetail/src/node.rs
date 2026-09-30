@@ -307,7 +307,7 @@ impl Node {
             env!("CARGO_PKG_VERSION"),
         );
         let _ = node.me.set(Arc::downgrade(&node));
-        node.add_offline_peers();
+        node.add_offline_peers(None);
         if platform::Capture::supported() {
             tokio::spawn(node.clone().start_capture(action_tx));
         }
@@ -346,12 +346,14 @@ impl Node {
 
     /// Put paired computers in the layout at their remembered spots before they connect, so
     /// pushing towards one that's asleep can wake it.
-    fn add_offline_peers(&self) {
+    fn add_offline_peers(&self, only: Option<&str>) {
         let peers = self.config.lock().unwrap().peers.clone();
         let mut controller = self.controller.lock().unwrap();
         for p in peers {
             if let Some(offset) = p.placement
                 && !p.displays.is_empty()
+                && !p.paused
+                && only.is_none_or(|id| id == p.id)
             {
                 controller.set_peer(&p.id, p.displays, offset);
             }
@@ -401,7 +403,7 @@ impl Node {
             .map(|(id, p)| (id.clone(), p.paired))
             .collect();
         for (id, paired) in peers {
-            self.send(&id, Message::Hello(self.hello(paired)));
+            self.send(&id, Message::Hello(self.hello(&id, paired)));
         }
     }
 
@@ -434,15 +436,16 @@ impl Node {
         }
     }
 
-    /// What we tell a computer about ourselves. Wake-on-LAN addresses only go to paired ones.
-    fn hello(&self, paired: bool) -> Hello {
+    /// What we tell a computer about ourselves. Wake-on-LAN addresses only go to paired ones;
+    /// a paused one hears we can't take input, which is all a release before `Paused` knows.
+    fn hello(&self, id: &str, paired: bool) -> Hello {
         Hello {
             protocol: PROTOCOL_VERSION,
             name: self.name.clone(),
             platform: Platform::current(),
             displays: self.displays.lock().unwrap().clone(),
             can_control: platform::Capture::supported(),
-            can_be_controlled: self.target.get().is_some(),
+            can_be_controlled: self.target.get().is_some() && !self.is_paused(id),
             wake_macs: if paired {
                 platform::wake_macs()
             } else {
@@ -589,7 +592,7 @@ impl Node {
             } else {
                 conn.accept_bi().await?
             };
-            net::write_message(&mut send, &Message::Hello(self.hello(paired))).await?;
+            net::write_message(&mut send, &Message::Hello(self.hello(&id, paired))).await?;
             let Message::Hello(hello) = net::read_message(&mut recv, MAX_UNPAIRED_FRAME).await?
             else {
                 anyhow::bail!("expected hello");
@@ -649,6 +652,9 @@ impl Node {
             conn.remote_address(),
             if paired { "paired" } else { "not paired" }
         );
+        if paired {
+            self.share_paused(&id);
+        }
         self.peer_up(&id);
 
         let writer = tokio::spawn(async move {
@@ -777,6 +783,9 @@ impl Node {
                     (p.displays, p.wake_macs, p.name) = now;
                 }
             });
+        }
+        if self.is_paused(id) {
+            return;
         }
         if peer.hello.protocol >= proto::SKIPS_UNKNOWN {
             self.send(
@@ -1077,7 +1086,7 @@ impl Node {
     // Messages
 
     fn on_motion(&self, id: &str, conn: usize, motion: Motion) {
-        if !self.is_current(id, conn) {
+        if !self.is_current(id, conn) || self.is_paused(id) {
             return;
         }
         let Some(t) = self.target.get() else { return };
@@ -1151,6 +1160,20 @@ impl Node {
                         peer.hello.name
                     ),
                 );
+            }
+            Message::Paused { paused, updated } => self.adopt_paused(id, paused, updated),
+            // Paused: nothing crosses. Leave still counts (our cursor comes home).
+            Message::Enter { .. }
+            | Message::Button { .. }
+            | Message::Scroll(_)
+            | Message::Key { .. }
+            | Message::Clipboard { .. }
+            | Message::Media(_)
+            | Message::AudioWanted(true)
+            | Message::SoundWanted { wanted: true, .. }
+                if self.is_paused(id) =>
+            {
+                debug!("ignoring input from {}: paused", peer.hello.name);
             }
             Message::Hello(hello) => {
                 if let Some(p) = self.peers.lock().unwrap().get_mut(id) {
@@ -1303,7 +1326,7 @@ impl Node {
 
     /// Which way sound goes between us and a connected peer: "here" or "there" (or neither).
     fn sound_way(&self, config: &Config, id: &str, peer: &Peer) -> Option<&'static str> {
-        if !peer.paired || !config.settings.audio {
+        if !peer.paired || !config.settings.audio || config.peer(id).is_some_and(|p| p.paused) {
             return None;
         }
         if self.listens_in(config, id, peer).0 {
@@ -1339,7 +1362,7 @@ impl Node {
             return;
         }
         let (listen, updated) = self.listens_to(id, peer);
-        let wanted = listen && self.config.lock().unwrap().settings.audio;
+        let wanted = listen && self.config.lock().unwrap().settings.audio && !self.is_paused(id);
         let msg = match peer.sound {
             Some(_) => Message::SoundWanted { wanted, updated },
             None => Message::AudioWanted(wanted),
@@ -1350,7 +1373,7 @@ impl Node {
     /// The cursor just went from here onto `id`: the user is here, so its sound should be too.
     fn claim_sound(&self, id: &str) {
         let Some(peer) = self.peer(id) else { return };
-        if !peer.paired || self.player.is_none() || !peer.sound_caps().1 {
+        if !peer.paired || self.player.is_none() || !peer.sound_caps().1 || self.is_paused(id) {
             return;
         }
         if self.listens_to(id, &peer).0 {
@@ -1423,7 +1446,7 @@ impl Node {
             .unwrap()
             .get(id)
             .is_some_and(|p| p.paired && p.conn.stable_id() == conn);
-        if paired && self.config.lock().unwrap().settings.audio {
+        if paired && self.config.lock().unwrap().settings.audio && !self.is_paused(id) {
             player.play(packet);
             self.heard_sound(id);
         }
@@ -1634,7 +1657,7 @@ impl Node {
             let c = self.config.lock().unwrap();
             (c.settings.clipboard, c.settings.clipboard_limit())
         };
-        if !enabled {
+        if !enabled || self.is_paused(to) {
             return;
         }
         let Some(peer) = self.peer(to) else { return };
@@ -1758,7 +1781,7 @@ impl Node {
             let c = self.config.lock().unwrap();
             (c.settings.clipboard, c.settings.clipboard_limit())
         };
-        if !enabled || data.len() > max {
+        if !enabled || data.len() > max || self.is_paused(id) {
             return false;
         }
         debug!("clipboard from {id} ({} bytes)", data.len());
@@ -1980,13 +2003,15 @@ impl Node {
                 wake_macs: peer.hello.wake_macs.clone(),
                 listen,
                 listen_updated,
+                paused: false,
+                paused_updated: 0,
             })
         });
         if let Some(p) = self.peers.lock().unwrap().get_mut(id) {
             p.paired = true;
         }
         // Now it can have what we keep from unpaired computers (how to wake us).
-        self.send(id, Message::Hello(self.hello(true)));
+        self.send(id, Message::Hello(self.hello(id, true)));
         self.peer_up(id);
     }
 
@@ -2036,6 +2061,7 @@ impl Node {
                     "placement": config.peer(id).and_then(|p| p.placement),
                     "version": discovered.get(id).and_then(|d| d.found.version.clone()),
                     "sound": conn.and_then(|p| self.sound_way(&config, id, p)),
+                    "paused": config.peer(id).is_some_and(|p| p.paused),
                 })
             })
             .collect();
@@ -2125,6 +2151,114 @@ impl Node {
         self.refresh_edges();
     }
 
+    /// Pause (or resume) a paired machine, here and on it.
+    pub fn set_paused(&self, query: &str, paused: bool) -> Result<String, String> {
+        let peer = self
+            .config
+            .lock()
+            .unwrap()
+            .find_peer(query)
+            .cloned()
+            .ok_or_else(|| format!("not paired with {query:?}"))?;
+        if peer.paused != paused {
+            self.apply_paused(&peer.id, paused, now_ms());
+            self.share_paused(&peer.id);
+        }
+        Ok(peer.name)
+    }
+
+    fn is_paused(&self, id: &str) -> bool {
+        self.config
+            .lock()
+            .unwrap()
+            .peer(id)
+            .is_some_and(|p| p.paused)
+    }
+
+    /// Tell a peer whether the link is paused, if it's ever been paused and it understands.
+    fn share_paused(&self, id: &str) {
+        let Some((paused, updated)) = self
+            .config
+            .lock()
+            .unwrap()
+            .peer(id)
+            .map(|p| (p.paused, p.paused_updated))
+        else {
+            return;
+        };
+        let understands = self
+            .peer(id)
+            .is_some_and(|p| p.hello.protocol >= proto::SKIPS_UNKNOWN);
+        if updated > 0 && understands {
+            self.send(id, Message::Paused { paused, updated });
+        }
+    }
+
+    /// A peer told us the link is paused or resumed. The newer choice wins (ties to the
+    /// smaller id, so both agree); if ours is newer, tell it.
+    fn adopt_paused(&self, id: &str, paused: bool, updated: u64) {
+        let Some((own, own_updated)) = self
+            .config
+            .lock()
+            .unwrap()
+            .peer(id)
+            .map(|p| (p.paused, p.paused_updated))
+        else {
+            return;
+        };
+        if own == paused {
+            return;
+        }
+        let newer = updated > own_updated || (updated == own_updated && id < self.id.as_str());
+        if !newer {
+            self.share_paused(id);
+            return;
+        }
+        info!(
+            "{} {} the link from there",
+            self.peer_name(id),
+            if paused { "paused" } else { "resumed" }
+        );
+        self.apply_paused(id, paused, updated);
+    }
+
+    fn apply_paused(&self, id: &str, paused: bool, updated: u64) {
+        self.update_config(|c| {
+            if let Some(p) = c.peer_mut(id) {
+                p.paused = paused;
+                p.paused_updated = updated;
+            }
+        });
+        // Whether we take input from it has changed.
+        self.send(id, Message::Hello(self.hello(id, true)));
+        if paused {
+            // Out of the layout, so the cursor can't cross to it (and comes home, telling it,
+            // if it's there); then stop anything else under way with it (it controlling us,
+            // sound).
+            let actions = self.controller.lock().unwrap().remove_peer(id);
+            self.apply_actions(actions);
+            self.refresh_edges();
+            let controlling_us = self
+                .target
+                .get()
+                .is_some_and(|t| t.lock().unwrap().active.as_deref() == Some(id));
+            self.peer_down(id);
+            if controlling_us {
+                // Its cursor comes home.
+                self.send(id, Message::Leave);
+            }
+            if let Some(peer) = self.peer(id) {
+                self.request_audio(id, &peer);
+            }
+        } else if self.peer(id).is_some() {
+            self.peer_up(id);
+        } else {
+            // Offline: back at its remembered spot, so pushing towards it can wake it.
+            self.add_offline_peers(Some(id));
+            self.refresh_edges();
+        }
+    }
+
     /// Put a peer beside one of this machine's displays.
     pub fn place(&self, query: &str, side: Side, display: Option<usize>) -> Result<Point, String> {
         let id = self.resolve_peer(Some(query), false)?;
@@ -2170,6 +2304,7 @@ impl Node {
                 "name": live.map(|l| l.hello.name.clone()).unwrap_or_else(|| p.name.clone()),
                 "this": false,
                 "connected": live.is_some(),
+                "paused": p.paused,
                 "displays": live.map(|l| l.hello.displays.clone()).unwrap_or_else(|| p.displays.clone()),
                 "offset": placed.or(p.placement),
             }));
@@ -2179,6 +2314,7 @@ impl Node {
         let mut all = controller.layout().clone();
         for p in &config.peers {
             if all.machine_index(&p.id).is_none()
+                && !p.paused
                 && let Some(offset) = p.placement
             {
                 all.machines.push(mousetail_core::layout::Machine {
@@ -2229,6 +2365,12 @@ impl Node {
                 p.placement_updated = now_ms();
             }
         });
+        if self.is_paused(&id) {
+            // Moved, but nothing crosses to it until it's resumed.
+            let actions = self.controller.lock().unwrap().remove_peer(&id);
+            self.apply_actions(actions);
+            return Ok(offset);
+        }
         let live = self.peer(&id).map(|p| p.hello.displays);
         let actions = self.controller.lock().unwrap().set_peer(
             &id,

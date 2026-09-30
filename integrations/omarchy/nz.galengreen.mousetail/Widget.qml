@@ -27,7 +27,6 @@ Panel {
   readonly property var pairingCode: status.pairing_code || null
   readonly property bool clipboard: status.settings ? status.settings.clipboard === true : true
   readonly property bool audio: status.settings ? status.settings.audio !== false : true
-  readonly property string macName: connectedPeers.length > 0 ? connectedPeers[0].name : "your Mac"
 
   readonly property string summary: {
     if (!running) return "Not running"
@@ -277,7 +276,7 @@ Panel {
           }
 
           SettingRow {
-            label: "Play sound on " + root.macName
+            label: "Sound follows you"
             checked: root.audio
             onToggled: root.setAudio(!root.audio)
           }

@@ -1,5 +1,7 @@
 //! Being controlled on macOS: input from another computer is posted as HID-level Quartz
 //! events, so every app sees it exactly like a real mouse and keyboard.
+//! Media keys (from the computer this Mac's sound is playing on) are pressed the same way, so
+//! whatever is playing here responds as if to its own keyboard.
 //!
 //! Every posted event carries `MOUSETAIL_EVENT` in its user-data field. Our own event tap skips
 //! those, so input we inject can never be mistaken for the local user pushing at an edge.
@@ -12,7 +14,12 @@ use std::time::{Duration, Instant};
 
 use mousetail_core::keys::{ev, evdev_to_mac};
 use mousetail_core::layout::Rect;
-use mousetail_core::proto::Scroll;
+use mousetail_core::proto::{MediaKey, Scroll};
+use objc2::encode::{Encoding, RefEncode};
+use objc2::msg_send;
+use objc2::rc::Retained;
+use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType};
+use objc2_foundation::NSPoint;
 
 /// Marks events MouseTail posted (checked by the event tap in `macos.rs`).
 pub const MOUSETAIL_EVENT: i64 = 0x4D544149; // "MTAI"
@@ -108,6 +115,7 @@ enum Cmd {
     Button(u16, bool),
     Key(u16, bool),
     Scroll(Scroll),
+    Media(MediaKey),
     ReleaseAll,
 }
 
@@ -159,6 +167,12 @@ impl Emulator {
     pub fn release_all(&self) {
         self.send(Cmd::ReleaseAll);
     }
+
+    /// Press a media key here, as if on this Mac's keyboard, so whatever is playing on it
+    /// (and now sounding on another computer) responds.
+    pub fn media(&self, key: MediaKey) {
+        self.send(Cmd::Media(key));
+    }
 }
 
 struct Injector {
@@ -192,6 +206,10 @@ impl Injector {
                 Cmd::Button(code, down) => self.button(code, down),
                 Cmd::Key(code, down) => self.key(code, down),
                 Cmd::Scroll(s) => self.scroll(s),
+                Cmd::Media(key) => {
+                    media_key(key, true);
+                    media_key(key, false);
+                }
                 Cmd::ReleaseAll => {
                     for code in self.keys.clone() {
                         self.key(code, false);
@@ -320,6 +338,63 @@ impl Injector {
     }
 }
 
+/// Press or release a media key.
+fn media_key(key: MediaKey, down: bool) {
+    objc2::rc::autoreleasepool(|_| {
+        let Some(event) = media_event(key, down) else {
+            return;
+        };
+        let cg = cg_event(&event);
+        if cg.is_null() {
+            return;
+        }
+        // The CGEvent belongs to the NSEvent, so it isn't released here.
+        unsafe {
+            CGEventSetIntegerValueField(cg, EVENT_SOURCE_USER_DATA, MOUSETAIL_EVENT);
+            CGEventPost(HID_TAP, cg);
+        }
+    });
+}
+
+/// Media keys aren't key events but "system defined" ones (subtype 8, the auxiliary control
+/// buttons), which only AppKit builds. The key goes in the top half of data1 and the
+/// down/up state in the bottom, with the same state in the flags.
+fn media_event(key: MediaKey, down: bool) -> Option<Retained<NSEvent>> {
+    // NX_KEYTYPE_PLAY, NX_KEYTYPE_FAST and NX_KEYTYPE_REWIND: what F8, F9 and F7 send.
+    let code: isize = match key {
+        MediaKey::PlayPause => 16,
+        MediaKey::Next => 19,
+        MediaKey::Previous => 20,
+    };
+    let state: isize = if down { 0xa00 } else { 0xb00 };
+    NSEvent::otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2(
+        NSEventType::SystemDefined,
+        NSPoint::new(0.0, 0.0),
+        NSEventModifierFlags(state as usize),
+        0.0,
+        0,
+        None,
+        8,
+        (code << 16) | state,
+        -1,
+    )
+}
+
+fn cg_event(event: &NSEvent) -> CGEventRef {
+    let cg: *mut OpaqueCGEvent = unsafe { msg_send![event, CGEvent] };
+    cg.cast()
+}
+
+/// `CGEventRef`'s target, so `msg_send!` can check the method's return type.
+#[repr(C)]
+struct OpaqueCGEvent {
+    _private: [u8; 0],
+}
+
+unsafe impl RefEncode for OpaqueCGEvent {
+    const ENCODING_REF: Encoding = Encoding::Pointer(&Encoding::Struct("__CGEvent", &[]));
+}
+
 fn button_number(code: u16) -> u32 {
     match code {
         ev::BTN_LEFT => 0,
@@ -343,5 +418,35 @@ pub fn on_enter() {
     let mut id = 0u32;
     unsafe {
         IOPMAssertionDeclareUserActivity(name.as_concrete_TypeRef() as *const c_void, 0, &mut id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Builds the events without posting them (posting would press the key on this Mac).
+    #[test]
+    fn media_events() {
+        #[link(name = "ApplicationServices", kind = "framework")]
+        unsafe extern "C" {
+            fn CGEventGetType(event: CGEventRef) -> u32;
+        }
+        objc2::rc::autoreleasepool(|_| {
+            for (key, code) in [
+                (MediaKey::PlayPause, 16),
+                (MediaKey::Next, 19),
+                (MediaKey::Previous, 20),
+            ] {
+                for (down, state) in [(true, 0xa00), (false, 0xb00)] {
+                    let event = media_event(key, down).unwrap();
+                    assert_eq!(event.subtype().0, 8);
+                    assert_eq!(event.data1(), (code << 16) | state);
+                    let cg = cg_event(&event);
+                    assert!(!cg.is_null());
+                    assert_eq!(unsafe { CGEventGetType(cg) }, 14); // system defined
+                }
+            }
+        });
     }
 }

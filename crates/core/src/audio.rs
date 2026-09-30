@@ -9,6 +9,8 @@ use std::ffi::c_int;
 
 use serde::{Deserialize, Serialize};
 
+use crate::proto::Platform;
+
 pub const SAMPLE_RATE: u32 = 48_000;
 pub const CHANNELS: usize = 2;
 /// 10 ms per packet.
@@ -16,6 +18,17 @@ pub const FRAME: usize = 480;
 const BITRATE: c_int = 160_000;
 /// A generous upper bound for one encoded 10 ms packet.
 pub const MAX_PACKET: usize = 1200;
+
+/// Before either computer has been used to push the cursor onto the other, which one plays
+/// the other's sound? A Mac (usually the one with the headphones) over anything else, else
+/// the smaller id. Both sides reach the same answer.
+pub fn listens_by_default(me: (&str, Platform), peer: (&str, Platform)) -> bool {
+    match (me.1 == Platform::MacOs, peer.1 == Platform::MacOs) {
+        (true, false) => true,
+        (false, true) => false,
+        _ => me.0 < peer.0,
+    }
+}
 
 /// One encoded packet on the wire.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -275,6 +288,25 @@ mod tests {
                 [v, v]
             })
             .collect()
+    }
+
+    #[test]
+    fn exactly_one_side_listens_by_default() {
+        use Platform::*;
+        for (a, b) in [
+            (MacOs, Linux),
+            (Linux, MacOs),
+            (MacOs, MacOs),
+            (Linux, Linux),
+        ] {
+            for (x, y) in [("aa", "bb"), ("bb", "aa")] {
+                assert_ne!(
+                    listens_by_default((x, a), (y, b)),
+                    listens_by_default((y, b), (x, a))
+                );
+            }
+        }
+        assert!(listens_by_default(("zz", MacOs), ("aa", Linux)));
     }
 
     #[test]

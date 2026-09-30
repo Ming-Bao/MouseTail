@@ -42,7 +42,7 @@ struct MenuContent: View {
                 }
                 MenuDivider()
                 SectionHeader("Settings")
-                SettingRow(soundLabel(status), systemImage: "speaker.wave.2", isOn: Binding(
+                SettingRow("Sound follows you", systemImage: "speaker.wave.2", isOn: Binding(
                     get: { status.settings.audio ?? true },
                     set: { on in Task { await model.setAudio(on) } }
                 ))
@@ -81,11 +81,6 @@ struct MenuContent: View {
         .frame(width: 320)
         // Otherwise the first control gets a focus ring each time the menu opens.
         .focusEffectDisabled()
-    }
-
-    private func soundLabel(_ status: Status) -> String {
-        let names = status.peers.filter(\.paired).map(\.name)
-        return names.count == 1 ? "Play \(names[0])'s sound here" : "Play other computers' sound here"
     }
 
     private var header: some View {
@@ -291,8 +286,14 @@ struct PeerRow: View {
     private var detail: String {
         if !peer.paired { return peer.connected ? "Found on your network" : "Not paired" }
         guard peer.connected else { return "Offline" }
-        if let ms = peer.rttMs { return String(format: "Connected · %.0f ms", ms) }
-        return "Connected"
+        var parts = ["Connected"]
+        if let ms = peer.rttMs { parts.append(String(format: "%.0f ms", ms)) }
+        switch peer.sound {
+        case "here": parts.append("its sound plays here")
+        case "there": parts.append("plays your sound")
+        default: break
+        }
+        return parts.joined(separator: " · ")
     }
 }
 

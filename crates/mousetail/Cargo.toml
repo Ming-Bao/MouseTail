@@ -21,6 +21,15 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 cpal = "0.18"
 core-foundation = "0.10"
 core-graphics = "0.25"
+block2 = "0.6"
+dispatch2 = "0.3"
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSString", "NSValue"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSEvent", "NSGraphicsContext"] }
+objc2-core-audio = { version = "0.3", default-features = false, features = ["std", "AudioHardware", "objc2", "objc2-core-audio-types", "objc2-foundation"] }
+objc2-core-audio-types = { version = "0.3", default-features = false, features = ["std", "CoreAudioBaseTypes"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFDictionary"] }
+objc2-media-player = { version = "0.3", default-features = false, features = ["std", "block2", "MPMediaItem", "MPNowPlayingInfoCenter", "MPRemoteCommand", "MPRemoteCommandCenter", "MPRemoteCommandEvent"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 wayland-client = "0.31"
@@ -30,4 +39,6 @@ evdev = "0.13"
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 wayland-protocols-misc = { version = "0.3", features = ["client"] }
 wl-clipboard-rs = "0.9"
-pipewire = "0.10"
+# 0.3.49+ for asking a playback stream how much it needs.
+pipewire = { version = "0.10", features = ["v0_3_49"] }
+zbus = { version = "5", default-features = false, features = ["tokio"] }

@@ -25,6 +25,10 @@ pub struct VirtualSpeaker {
 }
 
 impl VirtualSpeaker {
+    pub fn supported() -> bool {
+        true
+    }
+
     /// Create the speaker, named `description` (e.g. the Mac's name), and make it the default
     /// output. PCM arrives on the returned channel in whatever chunk sizes PipeWire uses.
     pub fn start(id: &str, description: &str) -> anyhow::Result<(Self, mpsc::Receiver<Vec<i16>>)> {

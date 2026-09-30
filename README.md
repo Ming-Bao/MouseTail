@@ -28,8 +28,10 @@
   Wi-Fi drop-out can't trap the cursor: it comes straight home. **Ctrl + Option + Esc** always
   brings it back too.
 - **Clipboard follows you.** Copy on one computer, paste on the other.
-- **Sound follows you.** The other computer's sound plays through whatever your Mac is using,
-  AirPods included. It appears there as a normal speaker you can switch away from.
+- **Sound follows you.** The computer you're sitting at plays the others' sound, through
+  whatever it's using, AirPods included: push the cursor from your Mac onto Linux and Linux's
+  sound comes to the Mac; push from Linux onto the Mac and the Mac's sound goes to Linux.
+  Pressing your AirPods or the play/pause and skip keys controls whatever is playing.
 - **Shortcuts feel right.** From a Mac to Linux, ⌘Tab, ⌘Space, ⌘Return, ⌘arrows and ⌘numbers
   go to the desktop as Super, ⌘C/⌘V/⌘X use Omarchy's universal copy and paste where it has it,
   and everything else (⌘T, ⌘F, ⌘W…) becomes Ctrl. From Linux to a Mac, Super is ⌘ and Alt is
@@ -44,7 +46,7 @@ Linux → Linux, and each can be both at different times.
 
 | | Main computer (yours moves over) | Controlled (you move onto it) |
 |---|---|---|
-| **macOS 14+** | Yes | Yes |
+| **macOS 14.2+** | Yes | Yes |
 | **Linux: Hyprland** (incl. [Omarchy](https://omarchy.org)) | Yes | Yes |
 | **Linux: Sway, river, niri and other wlroots desktops** | Yes, untested | Yes, untested |
 | **Linux: KDE Plasma** | Yes, untested | Yes, after `enable-input.sh`, untested |
@@ -52,11 +54,12 @@ Linux → Linux, and each can be both at different times.
 | **Windows** | Planned | Planned |
 
 Clipboard works everywhere except GNOME (which doesn't let background apps use the
-clipboard yet). Sound currently goes from Linux to a Mac.
+clipboard yet). Sound goes either way between Macs and Linux (PipeWire); sending a Mac's sound
+needs the System Audio Recording permission.
 
 ## Install
 
-**Mac** (macOS 14 or later, Apple Silicon or Intel)
+**Mac** (macOS 14.2 or later, Apple Silicon or Intel)
 
 1. Download [MouseTail-macos.dmg](https://github.com/galengreen/mousetail/releases/latest/download/MouseTail-macos.dmg)
    and drag MouseTail into Applications.

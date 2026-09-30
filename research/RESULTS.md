@@ -51,3 +51,31 @@ Run Linux spikes with `dev/sync.sh && ssh $MOUSETAIL_REMOTE '~/Workspace/MouseTa
 |---|---|---|
 | Wi-Fi | connected, 39 ms | connected, 26 ms |
 | Ethernet | **timed out**: reply came from .64, ufw dropped it | connected, **7 ms** |
+
+## Follow-up: media controls on the Mac (2026-09-30)
+
+`research/mac-nowplaying` drives the daemon's `macos_media.rs`: claims Now Playing, then
+paused, then lets go, logging commands (media keys synthesised with `NSEvent` system-defined
+events, which travel the same MediaRemote path as AirPods).
+
+- **A bare binary can be Now Playing.** No app bundle or window needed; play/pause, previous
+  and paused-state presses all arrived.
+- **Commands arrive on the main thread only.** Registering from another thread running its own
+  run loop received nothing, so the daemon's main thread has to run the run loop.
+- **Actually playing sound matters.** While a browser app was really playing, a process that
+  only *claimed* to be playing didn't get the presses. The daemon plays the other computer's
+  sound itself, so it competes like any music app; the spike doesn't.
+
+## Follow-up: sound both ways (2026-09-30)
+
+- **Linux playback** (iMac): the PipeWire player stream appears when sound arrives and is gone
+  about 3 s after it stops. When the default output is one of MouseTail's own speakers it plays
+  to a real output instead (checked: linked to `imac_speakers`, not the MouseTail sink), so it
+  can't feed back.
+- **Linux media controls**: the MPRIS player takes its bus name on show and drops it on clear,
+  and PlayPause/Play/Pause/Stop/Next/Previous all arrive. Omarchy 4's media keys run
+  `omarchy-shell media …` (its shell's MPRIS support), not `playerctl`, which isn't installed.
+- **Mac sending** (`research/mac-tap`): built but not yet run; it needs the System Audio
+  Recording permission and mutes the Mac while it taps.
+- **macOS 14.2 minimum**: cpal already links `AudioHardwareDestroyProcessTap` directly (0.2.2's
+  daemon included), so the daemon can't load on 14.0/14.1; the app now says 14.2.

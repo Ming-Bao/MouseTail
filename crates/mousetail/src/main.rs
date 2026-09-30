@@ -31,11 +31,36 @@ Usage:
   mousetail --version                   Show the version
 ";
 
-#[tokio::main]
-async fn main() {
-    if let Err(e) = run().await {
-        eprintln!("mousetail: {e:#}");
-        std::process::exit(1);
+fn main() {
+    // macOS delivers media controls (AirPods, media keys) on the main thread only, so there
+    // the main thread runs the run loop and everything else runs beside it.
+    #[cfg(target_os = "macos")]
+    {
+        std::thread::Builder::new()
+            .name("main-async".into())
+            .stack_size(8 << 20)
+            .spawn(|| std::process::exit(run_async()))
+            .expect("starting the async runtime");
+        platform::run_main_loop();
+    }
+    #[cfg(not(target_os = "macos"))]
+    std::process::exit(run_async());
+}
+
+fn run_async() -> i32 {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("building the async runtime");
+    let result = runtime.block_on(run());
+    // `process::exit` doesn't flush.
+    let _ = std::io::stdout().flush();
+    match result {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("mousetail: {e:#}");
+            1
+        }
     }
 }
 
@@ -236,9 +261,14 @@ fn status_text(v: &Value) -> String {
             .as_f64()
             .map(|ms| format!(", {ms:.1} ms via {}", p["address"].as_str().unwrap_or("?")))
             .unwrap_or_default();
+        let sound = match p["sound"].as_str() {
+            Some("here") => ", its sound plays here",
+            Some("there") => ", this machine's sound plays there",
+            _ => "",
+        };
         let _ = writeln!(
             out,
-            "  {} ({}): {state}{rtt}",
+            "  {} ({}): {state}{rtt}{sound}",
             p["name"].as_str().unwrap_or("?"),
             p["id"].as_str().unwrap_or("?")
         );

@@ -438,6 +438,18 @@ pub fn caps_lock_on() -> bool {
     unsafe { CGEventSourceFlagsState(HID_SYSTEM_STATE) & ALPHA_SHIFT != 0 }
 }
 
+/// How long since this Mac's own keyboard, mouse or trackpad was last used.
+pub fn idle_time() -> Option<std::time::Duration> {
+    #[link(name = "ApplicationServices", kind = "framework")]
+    unsafe extern "C" {
+        fn CGEventSourceSecondsSinceLastEventType(state: i32, event_type: u32) -> f64;
+    }
+    const HID_SYSTEM_STATE: i32 = 1;
+    const ANY_INPUT: u32 = !0;
+    let seconds = unsafe { CGEventSourceSecondsSinceLastEventType(HID_SYSTEM_STATE, ANY_INPUT) };
+    std::time::Duration::try_from_secs_f64(seconds).ok()
+}
+
 pub fn keyboard_blocked() -> bool {
     #[link(name = "Carbon", kind = "framework")]
     unsafe extern "C" {

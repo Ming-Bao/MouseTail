@@ -23,7 +23,7 @@ use mousetail_core::net;
 use mousetail_core::net::Endpoints;
 use mousetail_core::pairing::{self, PakeState, Role};
 use mousetail_core::proto::{
-    self, Datagram, DisplayInfo, Hello, Message, Motion, PROTOCOL_VERSION, Platform,
+    self, Datagram, DisplayInfo, Hello, MediaKey, Message, Motion, PROTOCOL_VERSION, Platform,
 };
 use mousetail_core::quinn::{Connection, Endpoint};
 use mousetail_core::update;
@@ -32,12 +32,18 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tracing::{debug, info, warn};
 
 use crate::paths::Paths;
-use crate::platform;
+use crate::platform::{self, MediaCommand};
 
 /// How long a new connection has to say hello.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 /// How long a shown pairing code stays valid.
 const CODE_LIFETIME: Duration = Duration::from_secs(120);
+/// Silence (nothing is sent) for this long means the other computer's sound was paused.
+const SOUND_STOPPED: Duration = Duration::from_secs(2);
+/// Input this soon after another computer stops controlling this one may still be theirs.
+const SETTLE_AFTER_VISIT: Duration = Duration::from_secs(3);
+/// Sound still arriving this soon after pausing is the tail of what was playing.
+const PAUSE_TAIL: Duration = Duration::from_secs(1);
 /// Minimum gap between pairing codes shown on this machine.
 const PAIR_REQUEST_INTERVAL: Duration = Duration::from_secs(5);
 /// Wrong codes allowed per window before pairing locks for the rest of it. With 4 digits,
@@ -119,6 +125,11 @@ pub struct Node {
     player: Option<platform::AudioPlayer>,
     /// Our sound going to another machine: (peer, connection, speaker).
     audio_out: Mutex<Option<(String, usize, platform::AudioSource)>>,
+    /// Sends this machine's media controls to the computer whose sound is playing here.
+    now_playing: Option<platform::NowPlaying>,
+    listening: Mutex<Listening>,
+    /// When another computer last controlled this one (its input isn't someone sitting here).
+    last_controlled: Mutex<Option<Instant>>,
     /// Ourselves, for handing work to background threads from `&self` methods.
     me: OnceLock<std::sync::Weak<Node>>,
     /// Keeps this machine up to date (Linux; the Mac app updates itself).
@@ -158,6 +169,16 @@ enum Pairing {
     },
 }
 
+/// Whose sound is playing here, so media controls can go back to it.
+#[derive(Default)]
+struct Listening {
+    source: Option<String>,
+    playing: bool,
+    last_sound: Option<Instant>,
+    /// Paused from here: ignore sound until then (see `PAUSE_TAIL`).
+    paused_until: Option<Instant>,
+}
+
 /// Receiving side: turns messages from the active controller into injected input.
 struct Target {
     emulator: platform::Emulator,
@@ -179,6 +200,11 @@ impl Node {
 
         let (action_tx, action_rx) = mpsc::unbounded_channel();
         let controller = Arc::new(Mutex::new(Controller::new(&id, displays.clone())));
+        let player = platform::AudioPlayer::start().ok();
+        let (media_tx, media_rx) = mpsc::unbounded_channel();
+        let now_playing = player
+            .as_ref()
+            .and_then(|_| platform::NowPlaying::start(media_tx).ok());
 
         let node = Arc::new(Node {
             id: id.clone(),
@@ -202,8 +228,11 @@ impl Node {
             left_peer: Mutex::new(None),
             settle: watch::Sender::new(None),
             last_wake: Mutex::default(),
-            player: platform::AudioPlayer::start().ok(),
+            player,
             audio_out: Mutex::new(None),
+            now_playing,
+            listening: Mutex::default(),
+            last_controlled: Mutex::new(None),
             me: OnceLock::new(),
             updater: Default::default(),
         });
@@ -228,6 +257,7 @@ impl Node {
         tokio::spawn(node.clone().dial_loop());
         tokio::spawn(node.clone().action_loop(action_rx));
         tokio::spawn(node.clone().settle_loop());
+        tokio::spawn(node.clone().media_loop(media_rx));
         tokio::spawn(node.clone().display_loop());
         tokio::spawn(crate::ipc::serve(node.clone(), paths.socket.clone()));
         tokio::spawn(crate::update::run(node.clone()));
@@ -337,6 +367,8 @@ impl Node {
             can_control: platform::Capture::supported(),
             can_be_controlled: self.target.get().is_some(),
             wake_macs: platform::wake_macs(),
+            can_play_sound: self.player.is_some(),
+            can_share_sound: platform::AudioSource::supported(),
         }
     }
 
@@ -726,6 +758,7 @@ impl Node {
 
     fn peer_down(&self, id: &str) {
         self.stop_audio(Some(id));
+        self.stop_listening(Some(id));
         let actions = self.controller.lock().unwrap().set_reachable(id, false);
         self.apply_actions(actions);
         let was_controlling_us = self.target.get().is_some_and(|t| {
@@ -767,6 +800,7 @@ impl Node {
                     self.send(&peer, msg);
                     if entering {
                         debug!("cursor → {peer}");
+                        self.claim_sound(&peer);
                         // Our clipboard travels with the cursor. After Enter on the same
                         // ordered stream, so the other side knows it's part of the crossing.
                         self.push_clipboard(&peer);
@@ -934,12 +968,20 @@ impl Node {
             Message::Placement { x, y, updated } => {
                 self.adopt_placement(id, Point::new(x, y), updated)
             }
-            Message::AudioWanted(wanted) => {
-                // Setting up the speaker can take a moment; keep this connection's input
+            Message::Media(key) => {
+                debug!("media key {key:?} from {}", peer.hello.name);
+                if let Some(t) = self.target.get() {
+                    t.lock().unwrap().emulator.media(key);
+                }
+            }
+            Message::AudioWanted { wanted, updated } => {
+                // Setting up the sound source can take a moment; keep this connection's input
                 // flowing meanwhile.
                 if let Some(node) = self.me.get().and_then(std::sync::Weak::upgrade) {
                     let id = id.to_string();
-                    tokio::task::spawn_blocking(move || node.audio_wanted(&id, &peer, wanted));
+                    tokio::task::spawn_blocking(move || {
+                        node.audio_requested(&id, &peer, wanted, updated)
+                    });
                 }
             }
             Message::Leave => {
@@ -999,15 +1041,133 @@ impl Node {
     }
 
     // -----------------------------------------------------------------------------------------
-    // Sound: the machine with the speakers asks; the other streams into it.
+    // Sound goes to the computer you're sitting at: whichever was last used to push the
+    // cursor onto the other. That one asks; the other streams into it.
 
-    /// If we can play sound, ask a paired machine that can't to send us its sound (or stop).
+    /// Do we play `id`'s sound (rather than it playing ours)? Returns when that was decided.
+    fn listens_to(&self, id: &str, peer: &Peer) -> (bool, u64) {
+        self.listens_in(&self.config.lock().unwrap(), id, peer)
+    }
+
+    fn listens_in(&self, config: &Config, id: &str, peer: &Peer) -> (bool, u64) {
+        let can_hear = self.player.is_some() && peer.hello.can_share_sound;
+        let can_send = platform::AudioSource::supported() && peer.hello.can_play_sound;
+        let (stored, updated) = config
+            .peer(id)
+            .map(|p| (p.listen, p.listen_updated))
+            .unwrap_or((None, 0));
+        let listen = match (can_hear, can_send) {
+            (false, _) => false,
+            (true, false) => true,
+            (true, true) => stored.unwrap_or_else(|| {
+                audio::listens_by_default(
+                    (&self.id, Platform::current()),
+                    (id, peer.hello.platform),
+                )
+            }),
+        };
+        (listen, updated)
+    }
+
+    /// Which way sound goes between us and a connected peer: "here" or "there" (or neither).
+    fn sound_way(&self, config: &Config, id: &str, peer: &Peer) -> Option<&'static str> {
+        if !peer.paired || !config.settings.audio {
+            return None;
+        }
+        if self.listens_in(config, id, peer).0 {
+            Some("here")
+        } else if platform::AudioSource::supported() && peer.hello.can_play_sound {
+            Some("there")
+        } else {
+            None
+        }
+    }
+
+    fn set_listen(&self, id: &str, listen: bool, updated: u64) {
+        let unchanged = self
+            .config
+            .lock()
+            .unwrap()
+            .peer(id)
+            .is_some_and(|p| p.listen == Some(listen) && p.listen_updated == updated);
+        if !unchanged {
+            self.update_config(|c| {
+                if let Some(p) = c.peer_mut(id) {
+                    p.listen = Some(listen);
+                    p.listen_updated = updated;
+                }
+            });
+        }
+    }
+
+    /// Ask a paired machine for its sound if we're the one that listens (else tell it not to
+    /// send any).
     fn request_audio(&self, id: &str, peer: &Peer) {
-        if self.player.is_none() || !peer.paired || peer.hello.platform == Platform::current() {
+        if !peer.paired {
             return;
         }
-        let wanted = self.config.lock().unwrap().settings.audio;
-        self.send(id, Message::AudioWanted(wanted));
+        let (listen, updated) = self.listens_to(id, peer);
+        let wanted = listen && self.config.lock().unwrap().settings.audio;
+        self.send(id, Message::AudioWanted { wanted, updated });
+    }
+
+    /// The cursor just went from here onto `id`: the user is here, so its sound should be too.
+    fn claim_sound(&self, id: &str) {
+        let Some(peer) = self.peer(id) else { return };
+        if !peer.paired || self.player.is_none() || !peer.hello.can_share_sound {
+            return;
+        }
+        if self.listens_to(id, &peer).0 {
+            return;
+        }
+        info!("sound from {} now plays here", peer.hello.name);
+        self.set_listen(id, true, now_ms());
+        self.stop_audio(Some(id));
+        self.request_audio(id, &peer);
+    }
+
+    /// Someone is using this computer's own keyboard or mouse: they're sitting here, so the
+    /// other computers' sound should come here too (even if they last crossed from elsewhere).
+    fn check_sitting_here(&self) {
+        let Some(idle) = platform::idle_time() else {
+            return;
+        };
+        let controlled = self
+            .target
+            .get()
+            .is_some_and(|t| t.lock().unwrap().active.is_some());
+        let mut last = self.last_controlled.lock().unwrap();
+        if controlled {
+            *last = Some(Instant::now());
+            return;
+        }
+        // Injected input from a visit that just ended still counts as recent input.
+        if idle > Duration::from_secs(1) || last.is_some_and(|t| t.elapsed() < SETTLE_AFTER_VISIT) {
+            return;
+        }
+        drop(last);
+        let ids: Vec<String> = self.peers.lock().unwrap().keys().cloned().collect();
+        for id in ids {
+            self.claim_sound(&id);
+        }
+    }
+
+    /// `id` asked for our sound (or to stop).
+    fn audio_requested(&self, id: &str, peer: &Peer, wanted: bool, updated: u64) {
+        if wanted {
+            let (listen, ours) = self.listens_to(id, peer);
+            if listen && self.config.lock().unwrap().settings.audio {
+                // Both think the user is with them: the newer claim wins.
+                let theirs_newer = updated > ours || (updated == ours && id < self.id.as_str());
+                if !theirs_newer {
+                    self.request_audio(id, peer);
+                    return;
+                }
+            }
+            self.set_listen(id, false, updated);
+            self.stop_listening(Some(id));
+        }
+        self.audio_wanted(id, peer, wanted);
     }
 
     fn on_audio(&self, id: &str, conn: usize, packet: AudioPacket) {
@@ -1020,7 +1180,118 @@ impl Node {
             .is_some_and(|p| p.paired && p.conn.stable_id() == conn);
         if paired && self.config.lock().unwrap().settings.audio {
             player.play(packet);
+            self.heard_sound(id);
         }
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Media controls: while another computer's sound plays here, AirPods presses and media
+    // keys go to it.
+
+    fn heard_sound(&self, id: &str) {
+        let Some(now_playing) = &self.now_playing else {
+            return;
+        };
+        let now = Instant::now();
+        let mut l = self.listening.lock().unwrap();
+        if l.paused_until.is_some_and(|t| now < t) {
+            return;
+        }
+        l.last_sound = Some(now);
+        if l.playing && l.source.as_deref() == Some(id) {
+            return;
+        }
+        l.source = Some(id.to_string());
+        l.playing = true;
+        drop(l);
+        now_playing.show(&self.peer_name(id), true);
+    }
+
+    /// Notice when the sound stops, and pass on media controls.
+    async fn media_loop(self: Arc<Self>, mut commands: mpsc::UnboundedReceiver<MediaCommand>) {
+        let mut tick = tokio::time::interval(Duration::from_millis(500));
+        loop {
+            tokio::select! {
+                command = commands.recv() => match command {
+                    Some(c) => self.on_media_command(c),
+                    None => return,
+                },
+                _ = tick.tick() => {
+                    self.check_sound_stopped();
+                    self.check_sitting_here();
+                }
+            }
+        }
+    }
+
+    fn check_sound_stopped(&self) {
+        let Some(now_playing) = &self.now_playing else {
+            return;
+        };
+        let mut l = self.listening.lock().unwrap();
+        if !l.playing || l.last_sound.is_some_and(|t| t.elapsed() < SOUND_STOPPED) {
+            return;
+        }
+        l.playing = false;
+        let Some(source) = l.source.clone() else {
+            return;
+        };
+        drop(l);
+        // Stay Now Playing, paused, so the next press resumes it.
+        now_playing.show(&self.peer_name(&source), false);
+    }
+
+    fn on_media_command(&self, command: MediaCommand) {
+        let Some(now_playing) = &self.now_playing else {
+            return;
+        };
+        let mut l = self.listening.lock().unwrap();
+        let Some(source) = l.source.clone() else {
+            return;
+        };
+        debug!("media control {command:?} for {source}");
+        let key = match command {
+            MediaCommand::Play if l.playing => return,
+            MediaCommand::Pause if !l.playing => return,
+            MediaCommand::PlayPause | MediaCommand::Play | MediaCommand::Pause => {
+                // Show the change straight away rather than when the sound stops or starts.
+                l.playing = !l.playing;
+                let now = Instant::now();
+                if l.playing {
+                    l.last_sound = Some(now);
+                    l.paused_until = None;
+                } else {
+                    l.paused_until = Some(now + PAUSE_TAIL);
+                }
+                let playing = l.playing;
+                drop(l);
+                now_playing.show(&self.peer_name(&source), playing);
+                MediaKey::PlayPause
+            }
+            MediaCommand::Next => MediaKey::Next,
+            MediaCommand::Previous => MediaKey::Previous,
+        };
+        self.send(&source, Message::Media(key));
+    }
+
+    /// `id`'s sound (or anyone's) no longer plays here: hand the controls back to the Mac.
+    fn stop_listening(&self, id: Option<&str>) {
+        let Some(now_playing) = &self.now_playing else {
+            return;
+        };
+        let mut l = self.listening.lock().unwrap();
+        if l.source.is_none() || id.is_some_and(|id| l.source.as_deref() != Some(id)) {
+            return;
+        }
+        *l = Listening::default();
+        drop(l);
+        now_playing.clear();
+    }
+
+    fn peer_name(&self, id: &str) -> String {
+        self.peer(id)
+            .map(|p| p.hello.name)
+            .unwrap_or_else(|| id.to_string())
     }
 
     fn audio_wanted(&self, id: &str, peer: &Peer, wanted: bool) {
@@ -1331,10 +1602,10 @@ impl Node {
         info!("paired with {} ({id})", peer.hello.name);
         self.update_config(|c| {
             // Pairing again (same computer) keeps where it sits on the desk.
-            let (placement, placement_updated) = c
+            let (placement, placement_updated, listen, listen_updated) = c
                 .peer(id)
-                .map(|p| (p.placement, p.placement_updated))
-                .unwrap_or((None, 0));
+                .map(|p| (p.placement, p.placement_updated, p.listen, p.listen_updated))
+                .unwrap_or((None, 0, None, 0));
             c.add_peer(PeerConfig {
                 id: id.to_string(),
                 name: peer.hello.name.clone(),
@@ -1343,6 +1614,8 @@ impl Node {
                 placement_updated,
                 displays: peer.hello.displays.clone(),
                 wake_macs: peer.hello.wake_macs.clone(),
+                listen,
+                listen_updated,
             })
         });
         if let Some(p) = self.peers.lock().unwrap().get_mut(id) {
@@ -1396,6 +1669,7 @@ impl Node {
                     "platform": conn.map(|p| p.hello.platform),
                     "placement": config.peer(id).and_then(|p| p.placement),
                     "version": discovered.get(id).and_then(|d| d.found.version.clone()),
+                    "sound": conn.and_then(|p| self.sound_way(&config, id, p)),
                 })
             })
             .collect();
@@ -1611,6 +1885,7 @@ impl Node {
             }
             if value == &Value::Bool(false) {
                 self.stop_audio(None);
+                self.stop_listening(None);
             }
         }
         result

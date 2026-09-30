@@ -1,7 +1,9 @@
 //! Platform backends behind one small surface so the node stays platform-free.
 //!
-//! - `Capture`: owns the local keyboard and mouse and feeds the `Controller` (macOS today).
-//! - `Emulator`: injects input received from a controller (Linux/Wayland today).
+//! - `Capture`: owns the local keyboard and mouse and feeds the `Controller`.
+//! - `Emulator`: injects input received from a controller.
+//! - `AudioSource` / `AudioPlayer`: this machine's sound going out / another's playing here.
+//! - `NowPlaying`: this machine's media controls, while another machine's sound plays here.
 //!
 //! Platforms without a backend get stubs whose `start` fails, which simply means that machine
 //! can't take that role yet.
@@ -24,8 +26,13 @@ pub mod macos_audio;
 #[cfg(target_os = "macos")]
 mod macos_emulate;
 #[cfg(target_os = "macos")]
+mod macos_media;
+#[cfg(target_os = "macos")]
+mod macos_tap;
+#[cfg(target_os = "macos")]
 pub use macos::{
-    Capture, caps_lock_on, clipboard_get, clipboard_set, displays, keyboard_blocked, notify,
+    Capture, caps_lock_on, clipboard_get, clipboard_set, displays, idle_time, keyboard_blocked,
+    notify,
 };
 #[cfg(target_os = "macos")]
 pub use macos_emulate::{Emulator, on_enter};
@@ -43,14 +50,35 @@ pub use linux::capture::Capture;
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub use stubs::Capture;
 
+#[cfg(target_os = "linux")]
+pub use linux::mpris::NowPlaying;
+#[cfg(target_os = "macos")]
+pub use macos_media::{NowPlaying, run_main_loop};
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+pub use stubs::NowPlaying;
+
+/// A media control pressed here (AirPods, media keys, Control Centre).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MediaCommand {
+    PlayPause,
+    Play,
+    Pause,
+    Next,
+    Previous,
+}
+
+#[cfg(target_os = "linux")]
+pub use linux::player::Player as AudioPlayer;
 #[cfg(target_os = "macos")]
 pub use macos_audio::Player as AudioPlayer;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub use stubs::AudioPlayer;
 
 #[cfg(target_os = "linux")]
 pub use linux::audio::VirtualSpeaker as AudioSource;
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+pub use macos_tap::SystemSound as AudioSource;
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 pub use stubs::AudioSource;
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -66,6 +94,12 @@ pub fn command_super_keys() -> HashSet<u16> {
 #[cfg(not(target_os = "macos"))]
 pub fn keyboard_blocked() -> bool {
     false
+}
+
+/// How long since this machine's own keyboard or mouse was used. (Only the Mac says yet.)
+#[cfg(not(target_os = "macos"))]
+pub fn idle_time() -> Option<std::time::Duration> {
+    None
 }
 
 /// Is Caps Lock on here? (Only the Mac says yet.)
@@ -124,10 +158,26 @@ mod stubs {
         pub fn play(&self, _packet: mousetail_core::audio::AudioPacket) {}
     }
 
+    /// Receives this machine's media controls while another machine's sound plays here.
+    pub struct NowPlaying;
+
+    impl NowPlaying {
+        pub fn start(_commands: UnboundedSender<super::MediaCommand>) -> anyhow::Result<Self> {
+            anyhow::bail!("media controls aren't supported on this platform yet")
+        }
+
+        pub fn show(&self, _source: &str, _playing: bool) {}
+        pub fn clear(&self) {}
+    }
+
     /// A virtual speaker whose sound is sent to another machine.
     pub struct AudioSource;
 
     impl AudioSource {
+        pub fn supported() -> bool {
+            false
+        }
+
         pub fn start(
             _id: &str,
             _description: &str,
@@ -153,6 +203,7 @@ mod stubs {
         pub fn key(&self, _code: u16, _down: bool) {}
         pub fn scroll(&self, _scroll: Scroll) {}
         pub fn release_all(&self) {}
+        pub fn media(&self, _key: mousetail_core::proto::MediaKey) {}
     }
 }
 

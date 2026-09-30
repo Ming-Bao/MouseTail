@@ -6,7 +6,9 @@
 
 pub mod audio;
 pub mod capture;
+pub mod mpris;
 mod outputs;
+pub mod player;
 mod uinput;
 
 use std::collections::HashSet;
@@ -19,7 +21,7 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use mousetail_core::keys::{CommandRemap, ev};
 use mousetail_core::layout::Rect;
-use mousetail_core::proto::{DisplayInfo, Scroll};
+use mousetail_core::proto::{DisplayInfo, MediaKey, Scroll};
 use serde::Deserialize;
 use wayland_client::protocol::wl_pointer::{Axis, AxisSource, ButtonState};
 use wayland_client::protocol::{wl_keyboard, wl_registry, wl_seat};
@@ -283,6 +285,18 @@ impl Emulator {
 
     pub fn release_all(&self) {
         self.send(Cmd::ReleaseAll);
+    }
+
+    /// Press a media key, which the desktop hands to whatever is playing (on Omarchy, through
+    /// its shell's media controls).
+    pub fn media(&self, key: MediaKey) {
+        let code = match key {
+            MediaKey::PlayPause => ev::PLAYPAUSE,
+            MediaKey::Next => ev::NEXTSONG,
+            MediaKey::Previous => ev::PREVIOUSSONG,
+        };
+        self.send(Cmd::Key(code, true));
+        self.send(Cmd::Key(code, false));
     }
 }
 

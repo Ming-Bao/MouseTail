@@ -195,17 +195,44 @@ at the Omarchy lock screen):
 
 ## Sound
 
-The machine with the speakers (the Mac) asks the other to send its sound (`AudioWanted`) when
-they connect, if the `audio` setting is on. The Linux side then creates a PipeWire
-`Audio/Sink` named after the Mac (a real output in Omarchy's audio menu) and makes it the
-default, remembering the previous default. Whatever plays into it is encoded with Opus
-(48 kHz stereo, 10 ms frames, 160 kbit/s, in-band FEC) and sent as QUIC datagrams; silence
-isn't sent. The Mac decodes into a playout buffer (40 ms cushion, conceals short gaps, re-buffers
-after pauses, skips ahead if it falls >120 ms behind, resamples to the device rate) and plays
-through the current default output, opening the device only while sound is arriving. On
-disconnect or when switched off, the virtual speaker is removed and the previous default is
-restored if the user hadn't picked something else. Opus is built in on macOS (self-contained
-app) and uses the system library on Linux.
+Sound goes to the computer you're sitting at: of two connected computers, whichever was last
+used to push the cursor onto the other plays the other's sound. Each remembers the decision per
+peer (`listen`, with when it was made). Until the first crossing both use the same default: a
+Mac over anything else (it usually has the headphones), else the smaller id. `Hello` says
+whether each side can play and send sound, and if only one direction is possible that's the
+one used.
+
+The listener asks for sound with `AudioWanted { wanted, updated }` on connect, on crossing and
+when the `audio` setting changes. If both sides think they're the listener (their saved
+decisions disagree), the newer claim wins and the other yields and starts sending.
+
+Sending:
+
+- **Linux** creates a PipeWire `Audio/Sink` named after the listener (a real output in
+  Omarchy's audio menu) and makes it the default, remembering the previous default. On stop it
+  is removed and the previous default restored if the user hadn't picked something else.
+- **macOS** (14.2+) taps everything the Mac plays except MouseTail itself with a Core Audio
+  process tap, muted locally while tapped, so the sound moves rather than plays twice. It needs
+  the System Audio Recording permission.
+
+Whatever is captured is encoded with Opus (48 kHz stereo, 10 ms frames, 160 kbit/s, in-band
+FEC) and sent as QUIC datagrams; silence isn't sent. The listener decodes into a playout buffer
+(40 ms cushion, conceals short gaps, re-buffers after pauses, skips ahead if it falls >120 ms
+behind, resamples to the device rate) and plays through its current default output (cpal on
+macOS, a PipeWire stream on Linux), opening it only while sound is arriving. Opus is built in on
+macOS (self-contained app) and uses the system library on Linux.
+
+**Media controls.** While another computer's sound is arriving, the listener presents itself
+as a media player named after that computer: on macOS the "Now Playing" app
+(`MPNowPlayingInfoCenter`/`MPRemoteCommandCenter`), on Linux an MPRIS player
+(`org.mpris.MediaPlayer2.mousetail`, which Omarchy's shell and `playerctl` pick up). So
+AirPods presses, media keys and the desktop's media controls send `Media(PlayPause | Next |
+Previous)` to the sender, which presses the matching media key itself so its own handling
+applies (Linux: on the virtual keyboard, where Omarchy binds them to its media controls; macOS: an
+NX system-defined key event). Two seconds of silence counts as paused: the listener stays the
+player, paused, so the next press resumes it. On disconnect, or with sound switched off, it
+lets go. macOS delivers these commands on the main thread only, so on macOS the daemon's main
+thread runs the run loop and the async runtime runs on another thread.
 
 ## Discovery and pairing
 
@@ -300,7 +327,8 @@ streams status as JSON lines for status bars.
 6. **Linux** ✅ first version: no-sudo installer/uninstaller, systemd user service, Omarchy bar
    plugin with pairing code, screensaver handling. Still to do: prebuilt binaries (install
    without Rust), AUR package.
-7. **Sound** ✅ first version: Linux → Mac, switchable from either side.
+7. **Sound** ✅ either way between Macs and Linux, following where you sit, with media
+   controls.
 8. **Later:** reverse direction (Linux capture via evdev grab or InputCapture portal, macOS
    injection via `CGEventPost`), multiple remotes, file transfer, image clipboard.
 

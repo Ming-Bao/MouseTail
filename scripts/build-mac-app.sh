@@ -60,11 +60,13 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$version</string>
-  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSMinimumSystemVersion</key><string>14.2</string>
   <key>LSUIElement</key><true/>
   <key>NSHumanReadableCopyright</key><string>© Galen Green</string>
   <key>NSLocalNetworkUsageDescription</key>
   <string>MouseTail finds and connects to your other computers on the local network.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>MouseTail sends your Mac's sound to the computer you're using.</string>
   <key>SUFeedURL</key>
   <string>https://github.com/galengreen/MouseTail/releases/latest/download/appcast.xml</string>
   <key>SUPublicEDKey</key><string>$(sed -n 's/^pub const PUBLIC_KEY: &str = "\(.*\)";/\1/p' crates/core/src/update.rs)</string>

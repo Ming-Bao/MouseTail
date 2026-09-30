@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::layout::Rect;
 
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 pub const ALPN: &[u8] = b"mousetail/1";
 /// Largest control frame accepted (clipboard payloads included).
 pub const MAX_FRAME: usize = 16 * 1024 * 1024;
@@ -59,6 +59,10 @@ pub struct Hello {
     pub can_be_controlled: bool,
     /// Hardware addresses a Wake-on-LAN packet can wake this machine through.
     pub wake_macs: Vec<String>,
+    /// Can play another machine's sound.
+    pub can_play_sound: bool,
+    /// Can send its own sound to another machine.
+    pub can_share_sound: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -103,9 +107,14 @@ pub enum Message {
     /// Key-confirmation tag.
     PairConfirm(Vec<u8>),
     PairFailed(String),
-    /// "Play your sound through me" (true) or stop (false). Sent by the machine with the
-    /// speakers; the other side answers by streaming `Datagram::Audio`.
-    AudioWanted(bool),
+    /// "Play your sound through me" (true) or stop (false). Sent by the computer the user is
+    /// sitting at; the other side answers by streaming `Datagram::Audio`. `updated` is when
+    /// the sender became the one that listens (Unix ms; 0 = by default), so if both think
+    /// they are, the newer claim wins.
+    AudioWanted {
+        wanted: bool,
+        updated: u64,
+    },
     /// "In my arrangement, your displays' origin sits at (x, y)", so both computers can keep
     /// one arrangement. `updated` is when a person last chose it (Unix ms; 0 = automatic).
     Placement {
@@ -113,6 +122,17 @@ pub enum Message {
         y: f64,
         updated: u64,
     },
+    /// A media control pressed on the machine with the speakers (AirPods, media keys) for
+    /// whatever is playing on the machine whose sound it's playing.
+    Media(MediaKey),
+}
+
+/// Media controls, as the headphones or keyboard sent them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MediaKey {
+    PlayPause,
+    Next,
+    Previous,
 }
 
 /// Unreliable, unordered traffic: latest-wins pointer motion and audio packets.

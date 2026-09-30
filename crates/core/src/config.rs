@@ -42,8 +42,8 @@ pub struct Settings {
     pub clipboard: bool,
     /// Largest clipboard payload to send, in bytes.
     pub clipboard_max_bytes: usize,
-    /// Share sound: a machine with speakers plays the other's sound; a machine without
-    /// sends it. Off here means neither.
+    /// Share sound: the computer you're sitting at plays the other's sound. Off here means
+    /// neither way.
     pub audio: bool,
     /// Install new releases automatically (Linux; the Mac app has its own setting).
     pub updates: bool,
@@ -78,6 +78,14 @@ pub struct PeerConfig {
     /// Hardware addresses for waking it (Wake-on-LAN).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wake_macs: Vec<String>,
+    /// This machine plays the peer's sound (true) or sends it ours (false), as decided by
+    /// whichever was last used to push the cursor onto the other. Unset = the default
+    /// (`audio::listens_by_default`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub listen: Option<bool>,
+    /// When `listen` was decided (Unix ms).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub listen_updated: u64,
 }
 
 fn is_zero(v: &u64) -> bool {
@@ -150,6 +158,8 @@ mod tests {
             placement_updated: 0,
             displays: vec![],
             wake_macs: vec![],
+            listen: Some(true),
+            listen_updated: 7,
         });
         let text = toml::to_string_pretty(&c).unwrap();
         assert_eq!(toml::from_str::<Config>(&text).unwrap(), c);

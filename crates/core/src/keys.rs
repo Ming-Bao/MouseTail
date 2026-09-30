@@ -27,6 +27,9 @@ pub mod ev {
     pub const X: u16 = 45;
     pub const C: u16 = 46;
     pub const V: u16 = 47;
+    pub const NEXTSONG: u16 = 163;
+    pub const PLAYPAUSE: u16 = 164;
+    pub const PREVIOUSSONG: u16 = 165;
 
     pub const BTN_LEFT: u16 = 0x110;
     pub const BTN_RIGHT: u16 = 0x111;

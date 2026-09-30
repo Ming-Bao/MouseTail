@@ -77,7 +77,8 @@ async fn run() -> anyhow::Result<()> {
                         .unwrap_or_else(|_| "info,quinn=warn,mdns_sd=warn".into()),
                 )
                 .init();
-            node::Node::run(paths).await
+            let exit_with_parent = args.iter().any(|a| a == "--exit-with-parent");
+            node::Node::run(paths, exit_with_parent).await
         }
         "status" => {
             let v = ipc::call(&paths.socket, &Request::Status).await?;

@@ -6,6 +6,7 @@
 
 pub mod audio;
 pub mod capture;
+mod keystate;
 pub mod mpris;
 mod outputs;
 pub mod player;
@@ -194,7 +195,9 @@ pub fn wake_macs() -> Vec<String> {
 pub fn notify(title: &str, body: &str) {
     let _ = Command::new("notify-send")
         .args(["--app-name=MouseTail", title, body])
-        .spawn();
+        .spawn()
+        // Collect it when it's done, so it doesn't linger as a zombie.
+        .map(|mut child| std::thread::spawn(move || child.wait()));
 }
 
 fn hyprctl_json<T: for<'de> Deserialize<'de>>(args: &[&str]) -> Option<T> {
@@ -303,13 +306,6 @@ impl Emulator {
 /// Sub-pixel resolution for absolute motion.
 const SUBPIXEL: f64 = 8.0;
 
-// Standard xkb modifier masks for evdev keymaps.
-const MOD_SHIFT: u32 = 1;
-const MOD_LOCK: u32 = 2;
-const MOD_CTRL: u32 = 4;
-const MOD_ALT: u32 = 8;
-const MOD_SUPER: u32 = 64;
-
 struct Injector {
     conn: Connection,
     queue: EventQueue<State>,
@@ -320,8 +316,7 @@ struct Injector {
     start: Instant,
     keys: HashSet<u16>,
     buttons: HashSet<u16>,
-    caps_locked: bool,
-    mods: u32,
+    xkb: keystate::KeyState,
 }
 
 impl Injector {
@@ -348,6 +343,17 @@ impl Injector {
         queue.roundtrip(&mut state)?;
         let (format, fd, size) = state.keymap.take().context("seat sent no keymap")?;
         kb.release();
+        let keymap = unsafe {
+            xkbcommon::xkb::Keymap::new_from_fd(
+                &xkbcommon::xkb::Context::new(xkbcommon::xkb::CONTEXT_NO_FLAGS),
+                fd.try_clone()?,
+                size as usize,
+                format,
+                xkbcommon::xkb::KEYMAP_COMPILE_NO_FLAGS,
+            )
+        }
+        .context("reading the keyboard layout")?
+        .context("couldn't understand the keyboard layout")?;
 
         let pointer = vpm.create_virtual_pointer(Some(&seat), &qh, ());
         let keyboard = vkm.create_virtual_keyboard(&seat, &qh, ());
@@ -364,9 +370,9 @@ impl Injector {
             start: Instant::now(),
             keys: HashSet::new(),
             buttons: HashSet::new(),
-            caps_locked: false,
-            mods: 0,
+            xkb: keystate::KeyState::new(keymap),
         })
+        .inspect(|injector| injector.send_modifiers())
     }
 
     fn now(&self) -> u32 {
@@ -466,8 +472,7 @@ impl Injector {
                 self.pointer.frame();
                 // Caps Lock too: the next computer to take over sets it again if it's on
                 // there, so it can't stay stuck on after being switched off elsewhere.
-                self.mods = 0;
-                self.caps_locked = false;
+                self.xkb.reset();
                 self.send_modifiers();
             }
         }
@@ -483,27 +488,14 @@ impl Injector {
             return;
         }
         self.keyboard.key(t, code as u32, down as u32);
-        if code == ev::CAPSLOCK && down {
-            self.caps_locked = !self.caps_locked;
-        }
-        let mods = self.keys.iter().fold(0, |m, k| {
-            m | match *k {
-                ev::LEFTSHIFT | ev::RIGHTSHIFT => MOD_SHIFT,
-                ev::LEFTCTRL | ev::RIGHTCTRL => MOD_CTRL,
-                ev::LEFTALT | ev::RIGHTALT => MOD_ALT,
-                ev::LEFTMETA | ev::RIGHTMETA => MOD_SUPER,
-                _ => 0,
-            }
-        });
-        if mods != self.mods || code == ev::CAPSLOCK {
-            self.mods = mods;
+        if self.xkb.key(code, down) {
             self.send_modifiers();
         }
     }
 
     fn send_modifiers(&self) {
-        let locked = if self.caps_locked { MOD_LOCK } else { 0 };
-        self.keyboard.modifiers(self.mods, 0, locked, 0);
+        let (depressed, latched, locked, group) = self.xkb.serialize();
+        self.keyboard.modifiers(depressed, latched, locked, group);
     }
 
     /// Write out pending requests, waiting briefly if the socket is momentarily full.

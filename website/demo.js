@@ -169,15 +169,24 @@
 
   // Copy the Linux install command.
   document.querySelectorAll("[data-copy]").forEach((button) => {
+    const text = button.querySelector(".cmd-text");
+    // Kept from the start, so clicking again while the message shows can't lose it.
+    const command = text.innerHTML;
+    let timer;
+    const say = (message, ok) => {
+      clearTimeout(timer);
+      text.textContent = message;
+      button.classList.toggle("copied", ok);
+      timer = setTimeout(() => { text.innerHTML = command; button.classList.remove("copied"); }, ok ? 1800 : 4000);
+    };
     button.addEventListener("click", async () => {
       try {
         await navigator.clipboard.writeText(button.dataset.copy);
-        button.classList.add("copied");
-        const text = button.querySelector(".cmd-text");
-        const before = text.innerHTML;
-        text.textContent = "Copied. Paste it into a terminal on your Linux computer.";
-        setTimeout(() => { text.innerHTML = before; button.classList.remove("copied"); }, 1800);
-      } catch {}
+        say("Copied. Paste it into a terminal on your Linux computer.", true);
+      } catch {
+        say(button.dataset.copy, false);
+        getSelection().selectAllChildren(text);
+      }
     });
   });
 

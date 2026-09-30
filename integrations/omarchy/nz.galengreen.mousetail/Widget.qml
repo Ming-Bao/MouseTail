@@ -61,14 +61,24 @@ Panel {
     if (!hadCode && pairingCode && !opened) open()
   }
 
-  function setClipboard(on) {
-    setter.command = [binary, "set", "clipboard", on ? "on" : "off"]
+  // Settings changes run one after another; one made while another is still running waits.
+  property var queued: []
+
+  function runSetter(command) {
+    if (setter.running) {
+      queued = queued.concat([command])
+      return
+    }
+    setter.command = command
     setter.running = true
   }
 
+  function setClipboard(on) {
+    runSetter([binary, "set", "clipboard", on ? "on" : "off"])
+  }
+
   function setAudio(on) {
-    setter.command = [binary, "set", "audio", on ? "on" : "off"]
-    setter.running = true
+    runSetter([binary, "set", "audio", on ? "on" : "off"])
   }
 
   Process {
@@ -88,7 +98,16 @@ Panel {
     onTriggered: watcher.running = true
   }
 
-  Process { id: setter }
+  Process {
+    id: setter
+    onExited: {
+      if (root.queued.length > 0) {
+        var next = root.queued[0]
+        root.queued = root.queued.slice(1)
+        root.runSetter(next)
+      }
+    }
+  }
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight

@@ -41,4 +41,5 @@ wayland-protocols-misc = { version = "0.3", features = ["client"] }
 wl-clipboard-rs = "0.9"
 # 0.3.49+ for asking a playback stream how much it needs.
 pipewire = { version = "0.10", features = ["v0_3_49"] }
+xkbcommon = "0.9"
 zbus = { version = "5", default-features = false, features = ["tokio"] }

@@ -182,6 +182,9 @@ struct Injector {
     buttons: HashSet<u16>,
     last_click: Option<(u16, Instant, CGPoint)>,
     clicks: i64,
+    /// Fractions of a pixel of smooth scrolling not posted yet (Quartz takes whole pixels),
+    /// so slow scrolling adds up instead of rounding away to nothing.
+    scroll_rest: (f64, f64),
 }
 
 // The source is only touched from the injector thread.
@@ -196,6 +199,7 @@ impl Injector {
             buttons: HashSet::new(),
             last_click: None,
             clicks: 1,
+            scroll_rest: (0.0, 0.0),
         }
     }
 
@@ -321,20 +325,24 @@ impl Injector {
     fn scroll(&mut self, s: Scroll) {
         // Scroll deltas arrive in the Wayland convention (positive = view moves down/right);
         // Quartz is the other way round.
-        unsafe {
-            let e = match s.notches {
-                Some((nx, ny)) => CGEventCreateScrollWheelEvent2(self.source, 1, 2, -ny, -nx, 0),
-                None => CGEventCreateScrollWheelEvent2(
-                    self.source,
-                    0,
-                    2,
-                    -s.dy.round() as i32,
-                    -s.dx.round() as i32,
-                    0,
-                ),
-            };
-            self.post(e);
-        }
+        let e = match s.notches {
+            Some((nx, ny)) => unsafe {
+                CGEventCreateScrollWheelEvent2(self.source, 1, 2, -ny, -nx, 0)
+            },
+            None => {
+                let x = self.scroll_rest.0 - s.dx;
+                let y = self.scroll_rest.1 - s.dy;
+                let (px, py) = (x.round(), y.round());
+                self.scroll_rest = (x - px, y - py);
+                if px == 0.0 && py == 0.0 {
+                    return;
+                }
+                unsafe {
+                    CGEventCreateScrollWheelEvent2(self.source, 0, 2, py as i32, px as i32, 0)
+                }
+            }
+        };
+        self.post(e);
     }
 }
 

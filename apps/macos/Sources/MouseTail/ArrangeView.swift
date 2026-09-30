@@ -70,7 +70,7 @@ struct ArrangeView: View {
     private func canvas(_ layout: LayoutInfo, size: CGSize) -> some View {
         let t = frozen ?? Transform(fitting: layout, in: size)
         return ZStack(alignment: .topLeading) {
-            ForEach(layout.machines) { machine in
+            ForEach(layout.shown) { machine in
                 machineView(machine, t: t)
             }
             if dragging == nil {
@@ -122,7 +122,15 @@ struct ArrangeView: View {
                     y: offset.y + Double(value.translation.height) / t.scale
                 )
                 Task {
-                    _ = await model.place(machine, at: desired)
+                    // The layout arrives already moved to where it snapped; shift the tile
+                    // back to where it was let go, so it glides from there rather than
+                    // jumping by the drag distance first.
+                    if let snapped = await model.place(machine, at: desired) {
+                        translation = CGSize(
+                            width: (desired.x - snapped.x) * t.scale,
+                            height: (desired.y - snapped.y) * t.scale
+                        )
+                    }
                     withAnimation(.spring(duration: 0.25)) {
                         dragging = nil
                         translation = .zero
@@ -140,7 +148,7 @@ struct Transform: Equatable {
     var bounds: Rect
 
     init(fitting layout: LayoutInfo, in size: CGSize) {
-        let rects = layout.machines.flatMap(\.placed)
+        let rects = layout.shown.flatMap(\.placed)
         let b = rects.dropFirst().reduce(rects.first ?? Rect(x: 0, y: 0, w: 1, h: 1)) { $0.union($1) }
         let margin = 40.0
         let s = min((Double(size.width) - 2 * margin) / b.w, (Double(size.height) - 2 * margin) / b.h)
@@ -179,6 +187,8 @@ struct DisplayTile: View {
     let display: Display
     let kind: Kind
     let lifted: Bool
+    /// Whether we've pushed the open-hand cursor (so it's popped exactly once).
+    @State private var hovering = false
 
     /// macOS's own name for one of this Mac's displays (e.g. "DELL P2715Q").
     static func localName(_ display: Display) -> String {
@@ -215,8 +225,15 @@ struct DisplayTile: View {
         .shadow(color: .black.opacity(lifted ? 0.35 : 0.15), radius: lifted ? 10 : 2, y: lifted ? 6 : 1)
         .contentShape(Rectangle())
         .onHover { inside in
-            if !machine.this {
-                if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
+            guard !machine.this, inside != hovering else { return }
+            if inside { NSCursor.openHand.push() } else { NSCursor.pop() }
+            hovering = inside
+        }
+        // Gone from under the pointer (unpaired, window closed): don't leave the hand behind.
+        .onDisappear {
+            if hovering {
+                NSCursor.pop()
+                hovering = false
             }
         }
     }

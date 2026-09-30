@@ -119,13 +119,30 @@ impl Decoder {
 
     /// Decode one packet, or with `None` conceal a lost one. Returns interleaved stereo.
     pub fn decode(&mut self, packet: Option<&[u8]>) -> anyhow::Result<Vec<i16>> {
+        self.decode_with(packet, false)
+    }
+
+    /// Rebuild the frame lost just before `next` from the redundancy `next` carries (the
+    /// encoder's in-band FEC). Decode `next` itself afterwards as usual.
+    pub fn recover(&mut self, next: &[u8]) -> anyhow::Result<Vec<i16>> {
+        self.decode_with(Some(next), true)
+    }
+
+    fn decode_with(&mut self, packet: Option<&[u8]>, fec: bool) -> anyhow::Result<Vec<i16>> {
         let mut out = vec![0i16; FRAME * CHANNELS];
         let (ptr, len) = match packet {
             Some(p) => (p.as_ptr(), p.len() as i32),
             None => (std::ptr::null(), 0),
         };
         let n = unsafe {
-            opusic_sys::opus_decode(self.0, ptr, len, out.as_mut_ptr(), FRAME as c_int, 0)
+            opusic_sys::opus_decode(
+                self.0,
+                ptr,
+                len,
+                out.as_mut_ptr(),
+                FRAME as c_int,
+                fec as c_int,
+            )
         };
         anyhow::ensure!(n >= 0, "opus decode: {n}");
         out.truncate(n as usize * CHANNELS);
@@ -165,9 +182,11 @@ impl Receiver {
     /// Decode a packet into samples for the playout buffer. `reset` is true when the stream
     /// restarted (the buffer should drop what it holds and re-buffer).
     pub fn receive(&mut self, p: &AudioPacket) -> (Vec<i16>, bool) {
-        let fresh = self.stream != Some(p.stream)
-            || p.seq.wrapping_sub(self.next_seq) > MAX_CONCEAL && p.seq > self.next_seq;
-        if !fresh && p.seq < self.next_seq {
+        // How far ahead of the expected packet this one is; negative is late. Signed, so the
+        // count carries on through wrapping round.
+        let ahead = p.seq.wrapping_sub(self.next_seq) as i32;
+        let fresh = self.stream != Some(p.stream) || ahead > MAX_CONCEAL as i32;
+        if !fresh && ahead < 0 {
             return (vec![], false); // late or duplicate
         }
         let mut out = vec![];
@@ -176,10 +195,12 @@ impl Receiver {
                 self.decoder = d;
             }
             self.stream = Some(p.stream);
-        } else {
-            for _ in self.next_seq..p.seq {
+        } else if ahead > 0 {
+            // Guess the older missing frames; the last one this packet can usually rebuild.
+            for _ in 1..ahead {
                 out.extend(self.decoder.decode(None).unwrap_or_default());
             }
+            out.extend(self.decoder.recover(&p.data).unwrap_or_default());
         }
         out.extend(self.decoder.decode(Some(&p.data)).unwrap_or_default());
         self.next_seq = p.seq.wrapping_add(1);
@@ -214,7 +235,7 @@ impl Playout {
             samples: VecDeque::new(),
             playing: false,
             target: target_ms * per_ms,
-            max: max_ms * per_ms,
+            max: max_ms.max(target_ms) * per_ms,
             phase: 0.0,
         }
     }
@@ -243,7 +264,7 @@ impl Playout {
         if !self.playing && self.samples.len() >= self.target {
             self.playing = true;
         }
-        let step = SAMPLE_RATE as f64 / rate as f64;
+        let step = SAMPLE_RATE as f64 / rate.max(1) as f64;
         for frame in out.chunks_mut(channels.max(1)) {
             let available = self.samples.len() / CHANNELS;
             if !self.playing || available < 2 {
@@ -351,6 +372,26 @@ mod tests {
         assert_eq!(out.len(), FRAME * 2);
         // Sender restarted.
         assert!(rx.receive(&packet(&mut enc, 2, 0)).1);
+    }
+
+    #[test]
+    fn receiver_counts_on_through_wrapping_round() {
+        let mut enc = Encoder::new().unwrap();
+        let mut rx = Receiver::new().unwrap();
+        let mut packet = |seq| AudioPacket {
+            stream: 1,
+            seq,
+            data: enc.encode(&tone(FRAME, 0)).unwrap(),
+        };
+        assert!(rx.receive(&packet(u32::MAX - 1)).1);
+        let (out, reset) = rx.receive(&packet(u32::MAX));
+        assert!(!reset && out.len() == FRAME * 2);
+        // 0 lost across the wrap: 1 brings it back (rebuilt) plus itself.
+        let (out, reset) = rx.receive(&packet(1));
+        assert!(!reset);
+        assert_eq!(out.len(), 2 * FRAME * 2);
+        // And something from before the wrap is late, not a new stream.
+        assert_eq!(rx.receive(&packet(u32::MAX)), (vec![], false));
     }
 
     #[test]

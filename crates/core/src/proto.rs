@@ -9,10 +9,30 @@ use serde::{Deserialize, Serialize};
 
 use crate::layout::Rect;
 
+/// Staying compatible (see "Releases" in DESIGN.md): postcard isn't self-describing, so new
+/// information goes in new `Message` and `Datagram` variants, added at the end. Older peers
+/// skip what they can't decode. Never add fields to existing messages: an older peer doesn't
+/// send them, and postcard can't fill in a missing one.
+///
+/// Anything else is a breaking change: bump `PROTOCOL_VERSION` and `MIN_PROTOCOL_VERSION`.
+///
+/// History: 5 sends each clipboard on a stream of its own (see `net::send_clipboard`) to peers
+/// on 5 or later, so a big one doesn't hold up input; 4 sends it inline.
 pub const PROTOCOL_VERSION: u32 = 5;
+/// First protocol with clipboards on their own streams.
+pub const CLIPBOARD_STREAMS: u32 = 5;
+/// First protocol whose peers skip messages they don't know (4 hangs up), so newer messages
+/// such as `SoundCaps` and `Media` can go to them.
+pub const SKIPS_UNKNOWN: u32 = 5;
+/// Oldest protocol this build still talks to. Newer peers are accepted: they only add things
+/// we skip, and they check that we're new enough for them.
+pub const MIN_PROTOCOL_VERSION: u32 = 4;
 pub const ALPN: &[u8] = b"mousetail/1";
 /// Largest control frame accepted (clipboard payloads included).
 pub const MAX_FRAME: usize = 16 * 1024 * 1024;
+/// Largest frame accepted before pairing (hellos and pairing messages are small), so anyone
+/// on the network can't make us hold 16 MiB per connection.
+pub const MAX_UNPAIRED_FRAME: usize = 64 * 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -59,10 +79,6 @@ pub struct Hello {
     pub can_be_controlled: bool,
     /// Hardware addresses a Wake-on-LAN packet can wake this machine through.
     pub wake_macs: Vec<String>,
-    /// Can play another machine's sound.
-    pub can_play_sound: bool,
-    /// Can send its own sound to another machine.
-    pub can_share_sound: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -107,14 +123,9 @@ pub enum Message {
     /// Key-confirmation tag.
     PairConfirm(Vec<u8>),
     PairFailed(String),
-    /// "Play your sound through me" (true) or stop (false). Sent by the computer the user is
-    /// sitting at; the other side answers by streaming `Datagram::Audio`. `updated` is when
-    /// the sender became the one that listens (Unix ms; 0 = by default), so if both think
-    /// they are, the newer claim wins.
-    AudioWanted {
-        wanted: bool,
-        updated: u64,
-    },
+    /// "Play your sound through me" (true) or stop (false), to and from peers that predate
+    /// `SoundCaps`; the other side answers by streaming `Datagram::Audio`.
+    AudioWanted(bool),
     /// "In my arrangement, your displays' origin sits at (x, y)", so both computers can keep
     /// one arrangement. `updated` is when a person last chose it (Unix ms; 0 = automatic).
     Placement {
@@ -122,9 +133,26 @@ pub enum Message {
         y: f64,
         updated: u64,
     },
-    /// A media control pressed on the machine with the speakers (AirPods, media keys) for
-    /// whatever is playing on the machine whose sound it's playing.
+    /// "I'm not paired with you (any more)": the receiver forgets the sender too, so unpairing
+    /// on one computer unpairs both.
+    NotPaired,
+    /// A media control pressed on the computer playing this one's sound (AirPods, media keys)
+    /// for whatever is playing here.
     Media(MediaKey),
+    /// Which ways this machine can share sound, sent after `Hello`. A peer that never sends
+    /// it predates sound going both ways: there a Mac only plays sound and Linux only sends it.
+    SoundCaps {
+        can_play: bool,
+        can_share: bool,
+    },
+    /// "Play your sound through me" (true) or stop (false), from the computer the user is
+    /// sitting at, to peers that sent `SoundCaps` (older ones get `AudioWanted`). `updated` is
+    /// when the sender became the one that listens (Unix ms; 0 = by default), so if both think
+    /// they are, the newer claim wins.
+    SoundWanted {
+        wanted: bool,
+        updated: u64,
+    },
 }
 
 /// Media controls, as the headphones or keyboard sent them.
@@ -186,6 +214,15 @@ mod tests {
         ] {
             assert_eq!(decode::<Datagram>(&encode(&d)).unwrap(), d);
         }
+    }
+
+    #[test]
+    fn newer_messages_fail_on_their_own() {
+        // A newer release adding a variant: older peers fail to decode just that frame (and
+        // skip it), not the stream.
+        let mut unknown = encode(&Message::Leave);
+        unknown[0] = 100;
+        assert!(decode::<Message>(&unknown).is_err());
     }
 
     #[test]

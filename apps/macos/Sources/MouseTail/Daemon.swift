@@ -42,6 +42,10 @@ struct DaemonClient {
 
         var tv = timeval(tv_sec: Int(timeout), tv_usec: 0)
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        // A daemon closing the socket mid-write must be an error here, not a SIGPIPE that
+        // kills the app.
+        var noSigPipe: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
 
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
@@ -80,32 +84,65 @@ struct DaemonClient {
 }
 
 /// Runs the bundled daemon (Contents/MacOS/mousetaild) for as long as the app is open.
-/// If a daemon is already running (e.g. during development) the app just uses that one.
+/// If a daemon of the same version is already running (e.g. during development) the app just
+/// uses that one; one left over from another version is asked to stop and replaced.
 @MainActor
 final class DaemonProcess {
     private var process: Process?
+    /// Launches in a row that never answered, to back off if the daemon keeps failing.
+    private var failures = 0
+    private var nextLaunch = Date.distantPast
 
     var bundledDaemon: URL? {
         let url = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/mousetaild")
         return FileManager.default.isExecutableFile(atPath: url.path) ? url : nil
     }
 
+    private struct Running: Decodable {
+        var version: String?
+    }
+
     func ensureRunning() async {
-        if (try? await DaemonClient().call(["cmd": "status"], timeout: 1)) != nil { return }
+        let client = DaemonClient()
+        if let reply = try? await client.call(["cmd": "status"], timeout: 1) {
+            failures = 0
+            let running = (try? JSONDecoder().decode(Running.self, from: reply))?.version
+            let ours = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+            guard process?.isRunning != true, bundledDaemon != nil, let ours, running != ours else {
+                return
+            }
+            // Too old to be asked to stop: keep using it, as before.
+            guard (try? await client.call(["cmd": "shutdown"], timeout: 1)) != nil else { return }
+            NSLog("MouseTail: replacing daemon \(running ?? "?") with \(ours)")
+            for _ in 0..<30 {
+                try? await Task.sleep(for: .milliseconds(100))
+                if (try? await client.call(["cmd": "status"], timeout: 1)) == nil { break }
+            }
+        }
         if let process, process.isRunning { return }
-        guard let daemon = bundledDaemon else { return }
+        guard let daemon = bundledDaemon, Date() >= nextLaunch else { return }
+        failures += 1
+        nextLaunch = Date().addingTimeInterval(min(pow(2, Double(failures)), 30))
 
         let logs = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Logs/MouseTail")
         try? FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
         let logURL = logs.appendingPathComponent("mousetail.log")
+        // Keep it from growing for ever: past 10 MB, start afresh and keep one old one.
+        let size = (try? FileManager.default.attributesOfItem(atPath: logURL.path)[.size] as? Int) ?? 0
+        if size > 10_000_000 {
+            let old = logs.appendingPathComponent("mousetail.old.log")
+            try? FileManager.default.removeItem(at: old)
+            try? FileManager.default.moveItem(at: logURL, to: old)
+        }
         if !FileManager.default.fileExists(atPath: logURL.path) {
             FileManager.default.createFile(atPath: logURL.path, contents: nil)
         }
 
         let p = Process()
         p.executableURL = daemon
-        p.arguments = ["run"]
+        // It stops by itself if the app goes away without stopping it (a crash).
+        p.arguments = ["run", "--exit-with-parent"]
         if let log = try? FileHandle(forWritingTo: logURL) {
             log.seekToEndOfFile()
             p.standardOutput = log
@@ -119,9 +156,16 @@ final class DaemonProcess {
         }
     }
 
+    /// Stop our daemon, giving it a couple of seconds to bring the cursor home first.
     func stop() {
         guard let process, process.isRunning else { return }
         process.terminate()
-        process.waitUntilExit()
+        let deadline = Date().addingTimeInterval(2)
+        while process.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        if process.isRunning {
+            kill(process.processIdentifier, SIGKILL)
+        }
     }
 }

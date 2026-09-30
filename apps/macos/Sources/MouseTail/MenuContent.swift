@@ -313,8 +313,14 @@ struct PairingPanel: View {
                         .frame(width: 90)
                         .onSubmit(submit)
                         .onChange(of: code) { _, new in
-                            code = String(new.filter(\.isNumber).prefix(4))
-                            if code.count == 4 { submit() }
+                            let digits = String(new.filter(\.isNumber).prefix(4))
+                            // Tidying it up (a pasted "12-34") runs this again with the digits;
+                            // submit then, not twice.
+                            if digits != new {
+                                code = digits
+                            } else if digits.count == 4 {
+                                submit()
+                            }
                         }
                     Button("Cancel") { model.pairing = nil }
                 }
@@ -361,6 +367,12 @@ struct ShownCodePanel: View {
 struct PermissionNotice: View {
     let detail: String?
 
+    /// The daemon got past the permission check but still couldn't start capturing.
+    private var permissionGranted: Bool {
+        guard let detail else { return false }
+        return !detail.contains("needs Accessibility and Input Monitoring")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Label("Allow MouseTail to use your keyboard and mouse", systemImage: "hand.raised.fill")
@@ -368,6 +380,13 @@ struct PermissionNotice: View {
             Text("Turn on MouseTail in Accessibility and Input Monitoring. It starts working as soon as you do.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if permissionGranted {
+                // macOS says yes, but still won't let it watch the keyboard and mouse: usually a
+                // permission left over from the version before an update.
+                Text("Already on? Turn MouseTail off and on again in both lists.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             HStack {
                 Button("Accessibility…") { open("Privacy_Accessibility") }
                 Button("Input Monitoring…") { open("Privacy_ListenEvent") }

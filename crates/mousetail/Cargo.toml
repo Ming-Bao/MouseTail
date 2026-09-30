@@ -31,3 +31,4 @@ wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 wayland-protocols-misc = { version = "0.3", features = ["client"] }
 wl-clipboard-rs = "0.9"
 pipewire = "0.10"
+xkbcommon = "0.9"

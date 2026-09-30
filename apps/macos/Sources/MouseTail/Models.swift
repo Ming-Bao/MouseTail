@@ -48,6 +48,10 @@ struct LayoutInfo: Codable, Equatable {
     var machines: [Machine]
     /// Edge stretches where the cursor passes between computers: [start, end] pairs.
     var crossings: [[Point]]?
+
+    /// Machines with a place in the arrangement: this Mac, and others once they've been put
+    /// somewhere (one that's never connected has nowhere to go yet).
+    var shown: [Machine] { machines.filter { $0.this || $0.offset != nil } }
 }
 
 struct Settings: Codable, Equatable {

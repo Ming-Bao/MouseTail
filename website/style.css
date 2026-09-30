@@ -153,7 +153,7 @@ h1 {
 @keyframes fly { 0% { opacity: 0; offset-distance: 0%; } 15%, 85% { opacity: 1; } 100% { opacity: 0; offset-distance: 100%; } }
 
 /* ------------------------------------------------------------- sections */
-.section { width: min(72rem, calc(100% - 3rem)); margin: 9rem auto 0; }
+.section { width: min(72rem, calc(100% - 3rem)); margin: 9rem auto 0; scroll-margin-top: 6rem; }
 .eyebrow { display: inline-flex; align-items: center; gap: .6rem; margin: 0; font: 500 .74rem/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 .eyebrow::before { content: ""; width: .42rem; height: .42rem; border-radius: 50%; background: var(--glow); box-shadow: 0 0 .7rem var(--glow-soft); }
 h2 { font-weight: 500; font-size: clamp(2.3rem, 5.2vw, 3.9rem); line-height: 1.02; letter-spacing: -.042em; margin: 1.3rem 0 1.2rem; }
@@ -233,7 +233,7 @@ kbd { font-family: var(--mono); padding: .3rem .5rem; border-radius: .4rem; back
 .points { list-style: none; padding: 0; margin: 0; display: grid; gap: 1.4rem; }
 .points li { display: flex; gap: 1rem; }
 .points .i { width: 1.25rem; height: 1.25rem; color: var(--glow); margin-top: .15rem; }
-.points h4 { margin: 0 0 .2rem; font-weight: 500; font-size: 1.02rem; }
+.points h3 { margin: 0 0 .2rem; font-weight: 500; font-size: 1.02rem; }
 .points p { margin: 0; color: var(--muted); font-size: .95rem; }
 .split-art { position: relative; padding: 3rem 2rem; border-radius: 1.6rem; background: radial-gradient(120% 90% at 70% 0%, #2d2e2e, var(--tile) 55%, #0e0f0f); border: 1px solid var(--line); overflow: hidden; }
 .split-art::after { content: ""; position: absolute; inset: 0; background: url("art/night.svg") center bottom / cover no-repeat; opacity: .5; }
@@ -297,4 +297,5 @@ body.video-mode .caption { position: fixed; top: 4vh; left: 0; right: 0; font-si
 @media (prefers-reduced-motion: reduce) {
   .js .reveal { opacity: 1; transform: none; transition: none; }
   .wave i { animation: none; height: 60%; }
+  .caret { animation: none; }
 }

@@ -169,17 +169,25 @@ impl Endpoints {
     /// Bind every current address, preferring `port` (any free port if it's taken).
     pub fn new(identity: &Identity, port: u16) -> anyhow::Result<Self> {
         let crypto = Crypto::new(identity)?;
-        let addrs = local_addrs();
-        anyhow::ensure!(!addrs.is_empty(), "no network connection");
         // Settle the port on the first address, then use it everywhere.
-        let first = crypto
-            .bind(SocketAddr::from((addrs[0].ip, port)))
-            .or_else(|_| crypto.bind(SocketAddr::from((addrs[0].ip, 0))))?;
-        let port = first.local_addr()?.port();
+        let (port, bound) = match local_addrs().first() {
+            Some(&first) => {
+                let endpoint = crypto
+                    .bind(SocketAddr::from((first.ip, port)))
+                    .or_else(|_| crypto.bind(SocketAddr::from((first.ip, 0))))?;
+                (endpoint.local_addr()?.port(), vec![(first, endpoint)])
+            }
+            // No network yet (Wi-Fi still joining at login, say): pick the port now and bind
+            // addresses as they appear (see `refresh`).
+            None => {
+                tracing::info!("no network connection yet; waiting for one");
+                (free_port(port)?, vec![])
+            }
+        };
         let endpoints = Self {
             crypto,
             port,
-            bound: std::sync::Mutex::new(vec![(addrs[0], first)]),
+            bound: std::sync::Mutex::new(bound),
         };
         endpoints.refresh();
         Ok(endpoints)
@@ -255,6 +263,13 @@ impl Endpoints {
             e.close(0u32.into(), b"shutdown");
         }
     }
+}
+
+/// `preferred` if it's free, otherwise any free port.
+fn free_port(preferred: u16) -> std::io::Result<u16> {
+    let probe = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, preferred))
+        .or_else(|_| std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)))?;
+    Ok(probe.local_addr()?.port())
 }
 
 fn transport_config() -> quinn::TransportConfig {
@@ -338,14 +353,39 @@ pub fn peer_fingerprint(conn: &Connection) -> Option<String> {
     certs.first().map(|c| fingerprint(c))
 }
 
-pub async fn read_message(recv: &mut RecvStream) -> anyhow::Result<Message> {
+/// Read one frame's body, refusing any over `max` bytes (at most `MAX_FRAME`). Errors here
+/// mean the stream itself is broken.
+pub async fn read_frame(recv: &mut RecvStream, max: usize) -> anyhow::Result<Vec<u8>> {
     let mut len = [0u8; 4];
     recv.read_exact(&mut len).await?;
     let len = u32::from_le_bytes(len) as usize;
-    anyhow::ensure!(len <= MAX_FRAME, "frame too large ({len} bytes)");
+    anyhow::ensure!(len <= max.min(MAX_FRAME), "frame too large ({len} bytes)");
     let mut buf = vec![0u8; len];
     recv.read_exact(&mut buf).await?;
-    proto::decode(&buf)
+    Ok(buf)
+}
+
+pub async fn read_message(recv: &mut RecvStream, max: usize) -> anyhow::Result<Message> {
+    proto::decode(&read_frame(recv, max).await?)
+}
+
+/// Send a clipboard on a stream of its own, so a big one doesn't hold up input on the main
+/// stream. The other side answers one byte once it has decided: true if it took it.
+pub async fn send_clipboard(conn: &Connection, msg: &Message) -> anyhow::Result<bool> {
+    let (mut send, mut recv) = conn.open_bi().await?;
+    write_message(&mut send, msg).await?;
+    send.finish()?;
+    let mut taken = [0u8];
+    recv.read_exact(&mut taken).await?;
+    Ok(taken[0] == 1)
+}
+
+/// The receiving end of `send_clipboard`: say whether we took it.
+pub async fn answer_clipboard(mut send: SendStream, taken: bool) {
+    let _ = send.write_all(&[taken as u8]).await;
+    let _ = send.finish();
+    // Let the byte go out before the stream is dropped (briefly: the other side may be gone).
+    let _ = tokio::time::timeout(Duration::from_secs(5), send.stopped()).await;
 }
 
 pub async fn write_message(send: &mut SendStream, msg: &Message) -> anyhow::Result<()> {
@@ -471,6 +511,47 @@ mod tests {
         assert_eq!(parse_mac("02:00:5e"), None);
     }
 
+    #[test]
+    fn free_port_prefers_the_one_asked_for() {
+        let taken = std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let taken = taken.local_addr().unwrap().port();
+        let port = free_port(taken).unwrap();
+        assert_ne!(port, taken);
+        assert_eq!(free_port(port).unwrap(), port);
+    }
+
+    #[tokio::test]
+    async fn clipboards_travel_on_their_own_stream_with_an_answer() {
+        let (a, b) = (identity("clip-a"), identity("clip-b"));
+        let ea = endpoint(&a, 0).unwrap();
+        let eb = endpoint(&b, 0).unwrap();
+        let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, eb.local_addr().unwrap().port()));
+        let clipboard = |text: &str| Message::Clipboard {
+            mime: "text/plain".into(),
+            data: text.as_bytes().to_vec(),
+        };
+
+        let server = tokio::spawn(async move {
+            let conn = eb.accept().await.unwrap().await.unwrap();
+            let mut got = vec![];
+            // Take the first, turn the second away.
+            for taken in [true, false] {
+                let (send, mut recv) = conn.accept_bi().await.unwrap();
+                got.push(read_message(&mut recv, MAX_FRAME).await.unwrap());
+                answer_clipboard(send, taken).await;
+            }
+            got
+        });
+
+        let conn = connect_fastest(&[(ea.clone(), addr)]).await.unwrap();
+        assert!(send_clipboard(&conn, &clipboard("one")).await.unwrap());
+        assert!(!send_clipboard(&conn, &clipboard("two")).await.unwrap());
+        assert_eq!(
+            server.await.unwrap(),
+            vec![clipboard("one"), clipboard("two")]
+        );
+    }
+
     #[tokio::test]
     async fn mutual_fingerprints_and_messages() {
         let (a, b) = (identity("a"), identity("b"));
@@ -482,7 +563,7 @@ mod tests {
             let conn = eb.accept().await.unwrap().await.unwrap();
             let fp = peer_fingerprint(&conn).unwrap();
             let (mut send, mut recv) = conn.accept_bi().await.unwrap();
-            let msg = read_message(&mut recv).await.unwrap();
+            let msg = read_message(&mut recv, MAX_FRAME).await.unwrap();
             write_message(&mut send, &Message::Leave).await.unwrap();
             let dgram = conn.read_datagram().await.unwrap();
             (fp, msg, dgram)
@@ -494,7 +575,10 @@ mod tests {
         write_message(&mut send, &Message::PairRequest)
             .await
             .unwrap();
-        assert_eq!(read_message(&mut recv).await.unwrap(), Message::Leave);
+        assert_eq!(
+            read_message(&mut recv, MAX_FRAME).await.unwrap(),
+            Message::Leave
+        );
         conn.send_datagram(bytes::Bytes::from_static(b"hi"))
             .unwrap();
 

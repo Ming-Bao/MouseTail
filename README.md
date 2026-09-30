@@ -73,10 +73,10 @@ curl -fsSL https://mousetail.galen.green/install.sh | sh
 
 This installs `~/.local/bin/mousetail`, runs it as a systemd user service that starts with your
 desktop and, on Omarchy, adds an icon to the bar. On GNOME or KDE the installer will ask you
-to run `enable-input.sh` once (it needs your password) so other computers can control this
-one. `uninstall.sh` in the [release download](https://github.com/galengreen/mousetail/releases/latest)
-removes everything. To let your Mac wake this computer from sleep, run `enable-wake.sh` from
-the same download (asks for your password once).
+to run `~/.local/share/mousetail/enable-input.sh` once (it needs your password) so other
+computers can control this one. `~/.local/share/mousetail/uninstall.sh` removes everything. To
+let your Mac wake this computer from sleep, run `~/.local/share/mousetail/enable-wake.sh`
+(asks for your password once).
 
 **Pair:** on a Mac, click the mouse in the menu bar, then **Pair…** next to the other computer;
 on Linux, run `mousetail pair`. Type the code the other computer shows. Then put it where it sits on

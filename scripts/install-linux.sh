@@ -13,6 +13,9 @@ config_home=${XDG_CONFIG_HOME:-$HOME/.config}
 unit_dir=$config_home/systemd/user
 plugin_id=nz.galengreen.mousetail
 omarchy=$config_home/omarchy
+# Helper scripts (enable-input, enable-wake, uninstall) live here, since a `curl | sh` install
+# deletes its download when it's done.
+share=${XDG_DATA_HOME:-$HOME/.local/share}/mousetail
 
 say() { printf '\033[1m==> %s\033[0m\n' "$*"; }
 
@@ -20,6 +23,8 @@ if [[ -x $here/mousetail ]]; then
   # Release download: everything is alongside this script.
   binary=$here/mousetail
   plugin_src=$here/omarchy-plugin/$plugin_id
+  helpers=$here
+  helper_suffix=.sh
 else
   repo=$(cd "$here/.." && pwd)
   [[ -f $repo/Cargo.toml ]] || { echo "Can't find MouseTail to install."; exit 1; }
@@ -33,6 +38,8 @@ else
   (cd "$repo" && "$cargo" build --release --quiet -p mousetail)
   binary=$repo/target/release/mousetail
   plugin_src=$repo/integrations/omarchy/$plugin_id
+  helpers=$repo/scripts
+  helper_suffix=-linux.sh
 fi
 
 install -Dm755 "$binary" "$bin_dir/mousetail"
@@ -42,12 +49,16 @@ if [[ -n $missing ]]; then
   echo "(They come with PipeWire and Opus; install those with your package manager.)"
   exit 1
 fi
+mkdir -p "$share"
+for helper in enable-input enable-wake uninstall; do
+  install -m755 "$helpers/$helper$helper_suffix" "$share/$helper.sh"
+done
 
 # MouseTail used to be called Kiore: stop and remove the old install (its settings and
 # pairings are moved across the first time MouseTail runs).
 if [[ -f $unit_dir/kiore.service || -e $HOME/.local/bin/kiore ]]; then
   say "Removing the old Kiore install"
-  systemctl --user disable --now kiore.service 2>/dev/null
+  systemctl --user disable --now kiore.service 2>/dev/null || true
   rm -f "$unit_dir/kiore.service" "$HOME/.local/bin/kiore"
   if [[ -d $omarchy ]]; then
     rm -rf "$omarchy/plugins/nz.galengreen.kiore"
@@ -65,6 +76,8 @@ cat > "$unit_dir/mousetail.service" <<UNIT
 Description=MouseTail keyboard, mouse and clipboard sharing
 After=graphical-session.target
 PartOf=graphical-session.target
+# Keep retrying however often it fails early on (e.g. while the desktop is still starting).
+StartLimitIntervalSec=0
 
 [Service]
 ExecStart=%h/.local/bin/mousetail run
@@ -77,6 +90,13 @@ UNIT
 systemctl --user daemon-reload
 systemctl --user enable --quiet mousetail.service
 systemctl --user restart mousetail.service
+# Some desktops (Hyprland or Sway started without uwsm, say) never tell systemd the session
+# has started, so nothing started "with your desktop" would run at the next login.
+if ! systemctl --user is-active --quiet graphical-session.target; then
+  echo "    Your desktop doesn't start systemd's graphical session, so start MouseTail from its"
+  echo "    config instead. Hyprland: exec-once = systemctl --user start mousetail"
+  echo "    Sway: exec systemctl --user start mousetail"
+fi
 
 if [[ -d $omarchy ]]; then
   say "Adding MouseTail to the Omarchy bar"
@@ -102,7 +122,7 @@ sleep 3
 if ! "$bin_dir/mousetail" status 2>/dev/null | grep -q "can be controlled"; then
   echo
   echo "To let other computers control this one on this desktop, run once (asks for your password):"
-  if [[ -x $here/enable-input.sh ]]; then echo "    $here/enable-input.sh"; else echo "    $here/enable-input-linux.sh"; fi
+  echo "    $share/enable-input.sh"
 fi
 
 if systemctl --user is-active --quiet lan-mouse.service 2>/dev/null; then
@@ -113,3 +133,5 @@ fi
 
 echo
 say "Done. To connect another computer, click Pair… in MouseTail there, or run: mousetail pair"
+echo "    To let your Mac wake this computer from sleep: $share/enable-wake.sh"
+echo "    To remove MouseTail: $share/uninstall.sh"

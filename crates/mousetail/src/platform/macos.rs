@@ -143,14 +143,24 @@ impl Capture {
         prompt: bool,
     ) -> anyhow::Result<Self> {
         ensure_permissions(prompt)?;
-        SHARED
-            .set(Shared {
-                controller,
-                actions,
-                grabbed: AtomicBool::new(false),
-                tap: AtomicPtr::new(ptr::null_mut()),
-            })
-            .map_err(|_| anyhow::anyhow!("capture already started"))?;
+        // Retries after a failed start pass the same controller and channel, so the first
+        // call's are kept. Only a tap that's actually running means we've already started.
+        let shared = SHARED.get_or_init(|| Shared {
+            controller,
+            actions,
+            grabbed: AtomicBool::new(false),
+            tap: AtomicPtr::new(ptr::null_mut()),
+        });
+        anyhow::ensure!(
+            shared.tap.load(Ordering::SeqCst).is_null(),
+            "capture already started"
+        );
+
+        let (ready_tx, ready_rx) = mpsc::channel();
+        thread::Builder::new()
+            .name("event-tap".into())
+            .spawn(move || run_tap(ready_tx))?;
+        ready_rx.recv().context("event tap thread died")??;
 
         unsafe {
             // Let our warp take effect immediately rather than ignoring input for 250 ms.
@@ -167,12 +177,6 @@ impl Capture {
                 CFBoolean::true_value().as_concrete_TypeRef() as *const c_void,
             );
         }
-
-        let (ready_tx, ready_rx) = mpsc::channel();
-        thread::Builder::new()
-            .name("event-tap".into())
-            .spawn(move || run_tap(ready_tx))?;
-        ready_rx.recv().context("event tap thread died")??;
         Ok(Self)
     }
 
@@ -198,6 +202,7 @@ fn ensure_permissions(prompt: bool) -> anyhow::Result<()> {
         unsafe { AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef() as *const c_void) };
     let monitoring =
         unsafe { CGPreflightListenEventAccess() || (prompt && CGRequestListenEventAccess()) };
+    // The Mac app tells this apart from other capture errors by its wording (PermissionNotice).
     anyhow::ensure!(
         accessibility && monitoring,
         "MouseTail needs Accessibility and Input Monitoring permission \
@@ -520,7 +525,9 @@ pub fn notify(title: &str, body: &str) {
     );
     let _ = std::process::Command::new("osascript")
         .args(["-e", &script])
-        .spawn();
+        .spawn()
+        // Collect it when it's done, so it doesn't linger as a zombie.
+        .map(|mut child| std::thread::spawn(move || child.wait()));
 }
 
 fn applescript_string(s: &str) -> String {

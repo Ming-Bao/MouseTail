@@ -15,6 +15,10 @@ stop_imac() { ssh "$REMOTE" 'pkill -x mousetail; while pgrep -x mousetail >/dev/
 
 case ${1:-start} in
   start)
+    if pgrep -x mousetaild >/dev/null; then
+      echo "Quit the MouseTail app first: only one MouseTail can run at a time." >&2
+      exit 1
+    fi
     cargo build -q -p mousetail || exit 1
     # A stable signing identity keeps macOS permission and firewall decisions across rebuilds
     # (ad-hoc signatures change every build). Uses the first Apple Development identity.

@@ -51,6 +51,8 @@ pub enum Request {
     Release,
     /// Look for a new release now and install it.
     Update,
+    /// Stop the daemon (the Mac app replacing one left over from another version).
+    Shutdown,
 }
 
 pub async fn serve(node: Arc<Node>, path: PathBuf) {
@@ -118,6 +120,10 @@ async fn handle(node: &Arc<Node>, req: Request) -> Value {
         }
         Request::Release => {
             node.release();
+            Ok(json!({}))
+        }
+        Request::Shutdown => {
+            node.shut_down();
             Ok(json!({}))
         }
         Request::Update => match crate::update::check(node).await {

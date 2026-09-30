@@ -8,7 +8,7 @@
 //! Pure and synchronous: the capture backend feeds it input and carries out the returned
 //! actions, which keeps it testable and lets the backend decide swallowing inline.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::keys::ev;
 use crate::layout::{DisplayRef, Layout, Machine, Point, Side};
@@ -94,6 +94,10 @@ fn sane(d: &DisplayInfo) -> bool {
 
 pub struct Controller {
     layout: Layout,
+    /// Where each peer was put, by a person or automatically. Displays change size and number
+    /// under a placement (resolution, scaling, a monitor plugged in), so the layout uses the
+    /// nearest valid spot to it; it comes back here when the displays do.
+    placements: HashMap<String, Point>,
     reachable: HashSet<String>,
     state: State,
     /// Keys and buttons held locally; their releases stay local even after a grab.
@@ -115,6 +119,7 @@ impl Controller {
                     offset: Point::default(),
                 }],
             },
+            placements: HashMap::new(),
             reachable: HashSet::new(),
             state: State::Local,
             local_held: HashSet::new(),
@@ -136,8 +141,12 @@ impl Controller {
         }
     }
 
-    pub fn set_local_displays(&mut self, displays: Vec<DisplayInfo>) {
+    /// This machine's displays changed. Returns actions if the cursor had to come home.
+    pub fn set_local_displays(&mut self, displays: Vec<DisplayInfo>) -> Vec<Action> {
+        let following = self.remote_offset();
         self.layout.machines[SELF].displays = displays;
+        self.settle();
+        self.follow_layout(following)
     }
 
     /// Add or update a peer's displays and placement. Returns actions if the cursor had to
@@ -150,6 +159,8 @@ impl Controller {
         } else {
             Point::default()
         };
+        let following = self.remote_offset();
+        self.placements.insert(id.into(), offset);
         let machine = Machine {
             id: id.into(),
             displays,
@@ -159,15 +170,79 @@ impl Controller {
             Some(i) => self.layout.machines[i] = machine,
             None => self.layout.machines.push(machine),
         }
-        match self.state {
-            State::Remote { on, .. }
-                if self.layout.machines[on.machine].id == id
-                    && on.display >= self.layout.machines[on.machine].displays.len() =>
-            {
-                self.go_home(None)
-            }
-            _ => vec![],
+        self.settle();
+        self.follow_layout(following)
+    }
+
+    /// Take a peer out of the layout (unpaired). Returns actions if the cursor was on it.
+    pub fn remove_peer(&mut self, id: &str) -> Vec<Action> {
+        let Some(i) = self.layout.machine_index(id) else {
+            return vec![];
+        };
+        let actions = if self.active_peer() == Some(id) {
+            self.go_home(None)
+        } else {
+            vec![]
+        };
+        self.layout.machines.remove(i);
+        self.placements.remove(id);
+        self.reachable.remove(id);
+        if let State::Remote { on, .. } = &mut self.state
+            && on.machine > i
+        {
+            on.machine -= 1;
         }
+        self.settle();
+        actions
+    }
+
+    /// Put every peer at its placement, or the nearest valid spot if its displays (or ours)
+    /// have changed so that it would overlap something or be out of reach.
+    fn settle(&mut self) {
+        if self.layout.machines[SELF].displays.is_empty() {
+            return;
+        }
+        for m in 1..self.layout.machines.len() {
+            let machine = &self.layout.machines[m];
+            let wanted = self
+                .placements
+                .get(&machine.id)
+                .copied()
+                .unwrap_or(machine.offset);
+            self.layout.machines[m].offset = wanted;
+            if self.layout.machines[m].displays.is_empty() || self.layout.well_placed(m, SELF) {
+                continue;
+            }
+            if let Some(offset) = self.layout.snap(m, SELF, wanted) {
+                self.layout.machines[m].offset = offset;
+            }
+        }
+    }
+
+    /// The offset of the machine the cursor is on, if it's on another one.
+    fn remote_offset(&self) -> Option<Point> {
+        match self.state {
+            State::Remote { on, .. } => Some(self.layout.machines[on.machine].offset),
+            State::Local => None,
+        }
+    }
+
+    /// After the layout changed: the cursor stays where it was on the other machine's
+    /// screen (moving with it if the machine moved), or comes home if its display is gone.
+    fn follow_layout(&mut self, old_offset: Option<Point>) -> Vec<Action> {
+        let (State::Remote { on, pos, home }, Some(old_offset)) = (self.state, old_offset) else {
+            return vec![];
+        };
+        let machine = &self.layout.machines[on.machine];
+        if on.display >= machine.displays.len() {
+            return self.go_home(None);
+        }
+        let pos = self
+            .layout
+            .rect(on)
+            .clamp(pos.offset(machine.offset.minus(old_offset)));
+        self.state = State::Remote { on, pos, home };
+        vec![]
     }
 
     /// Offset placing `id` beside one of this machine's displays (default: the primary),
@@ -208,6 +283,16 @@ impl Controller {
     /// Bring the cursor home now (hotkey, shutdown, pause).
     pub fn release(&mut self) -> Vec<Action> {
         self.go_home(None)
+    }
+
+    /// `id` says it's no longer ours to control (someone else took it over). If the cursor is
+    /// on it, come home; it already knows, so don't tell it.
+    pub fn sent_home_by(&mut self, id: &str) -> Vec<Action> {
+        if self.active_peer() == Some(id) {
+            self.go_home(Some(false))
+        } else {
+            vec![]
+        }
     }
 
     pub fn set_suspended(&mut self, suspended: bool) {
@@ -326,7 +411,9 @@ impl Controller {
             actions: vec![],
         };
         match input {
-            Input::Motion { dx, dy, .. } => out.actions = self.move_remote(on, pos, home, dx, dy),
+            Input::Motion {
+                dx, dy, dragging, ..
+            } => out.actions = self.move_remote(on, pos, home, dx, dy, dragging),
             Input::Key { code, down } | Input::Button { code, down } => {
                 if !down && self.local_held.remove(&code) {
                     // Pressed before we crossed: let the release reach this machine.
@@ -380,6 +467,7 @@ impl Controller {
         home: Point,
         dx: f64,
         dy: f64,
+        dragging: bool,
     ) -> Vec<Action> {
         let target = Point::new(pos.x + dx, pos.y + dy);
         if let Some(d) = self.layout.locate_on(on.machine, target) {
@@ -393,17 +481,22 @@ impl Controller {
             (Side::Below, target.y - (r.bottom() - 1.0)),
         ];
         let clamped = r.clamp(target);
-        let crossing = over
-            .iter()
-            .filter(|(_, by)| *by > 0.0)
-            .max_by(|a, b| a.1.total_cmp(&b.1))
-            .and_then(|(side, _)| {
-                let along = match side {
-                    Side::Left | Side::Right => clamped.y,
-                    Side::Above | Side::Below => clamped.x,
-                };
-                self.layout.neighbour(on, *side, along)
-            });
+        // Whichever side it's pushed furthest past that leads somewhere, so pushing out of a
+        // corner still crosses. A drag stays on this computer, like one here stays here.
+        let mut sides: Vec<_> = over.iter().filter(|(_, by)| *by > 0.0).collect();
+        sides.sort_by(|a, b| b.1.total_cmp(&a.1));
+        let crossing = sides.into_iter().find_map(|(side, _)| {
+            let along = match side {
+                Side::Left | Side::Right => clamped.y,
+                Side::Above | Side::Below => clamped.x,
+            };
+            self.layout.neighbour(on, *side, along).filter(|c| {
+                let to = c.to.machine;
+                to == on.machine
+                    || !dragging
+                        && (to == SELF || self.reachable.contains(&self.layout.machines[to].id))
+            })
+        });
         match crossing {
             Some(c) if c.to.machine == SELF => {
                 let warp = self.layout.to_local(SELF, c.point);
@@ -732,6 +825,171 @@ mod tests {
                 }
             }]
         );
+    }
+
+    fn imac(c: &Controller) -> Machine {
+        let m = c.layout.machine_index("imac").unwrap();
+        c.layout.machines[m].clone()
+    }
+
+    #[test]
+    fn peer_growing_into_an_overlap_is_nudged_then_restored() {
+        let mut c = desk();
+        let placed = imac(&c).offset;
+        let bigger = vec![display("eDP-1", 0.0, 0.0, 2560.0, 1440.0, true)];
+        c.set_peer("imac", bigger, placed);
+        let m = c.layout.machine_index("imac").unwrap();
+        assert_ne!(imac(&c).offset, placed);
+        assert!(c.layout.well_placed(m, SELF));
+
+        // Back to how it was: back where it was put.
+        let imac_displays = vec![display("eDP-1", 0.0, 0.0, 1920.0, 1080.0, true)];
+        c.set_peer("imac", imac_displays, placed);
+        assert_eq!(imac(&c).offset, placed);
+    }
+
+    #[test]
+    fn local_display_appearing_under_a_peer_nudges_it() {
+        let mut c = desk();
+        let placed = imac(&c).offset;
+        let actions = c.set_local_displays(vec![
+            display("builtin", 0.0, 0.0, 1512.0, 982.0, true),
+            display("side", -1000.0, 0.0, 1000.0, 982.0, false),
+        ]);
+        assert!(actions.is_empty());
+        let m = c.layout.machine_index("imac").unwrap();
+        assert_ne!(imac(&c).offset, placed);
+        assert!(c.layout.well_placed(m, SELF));
+    }
+
+    #[test]
+    fn cursor_on_a_peer_that_grows_can_still_come_home() {
+        let mut c = desk();
+        enter(&mut c);
+        let placed = imac(&c).offset;
+        let bigger = vec![display("eDP-1", 0.0, 0.0, 2560.0, 1440.0, true)];
+        assert!(c.set_peer("imac", bigger, placed).is_empty());
+        assert_eq!(c.active_peer(), Some("imac"));
+        // Push right across the whole (now wider) screen: home, not stuck.
+        for _ in 0..10 {
+            c.handle(motion(0.0, 500.0, 100.0, 0.0));
+        }
+        assert_eq!(c.active_peer(), None);
+    }
+
+    #[test]
+    fn cursor_moves_with_a_peer_that_is_moved() {
+        let mut c = desk();
+        enter(&mut c);
+        let moved = imac(&c).offset.offset(Point::new(0.0, 40.0));
+        let displays = imac(&c).displays;
+        assert!(c.set_peer("imac", displays, moved).is_empty());
+        assert_eq!(imac(&c).offset, moved);
+        // Same spot on the iMac's own screen as before the move.
+        let out = c.handle(motion(0.0, 500.0, -100.0, 10.0));
+        assert!(
+            matches!(out.actions[0], Action::Motion { motion: Motion { x, y, .. }, .. } if x == 1819.0 && y == 510.0),
+            "{:?}",
+            out.actions
+        );
+    }
+
+    #[test]
+    fn peer_losing_the_display_the_cursor_is_on_sends_it_home() {
+        let mut c = desk();
+        enter(&mut c);
+        let placed = imac(&c).offset;
+        let actions = c.set_peer("imac", vec![], placed);
+        assert!(matches!(actions.last(), Some(Action::Release { .. })));
+        assert_eq!(c.active_peer(), None);
+    }
+
+    #[test]
+    fn removing_a_peer_takes_it_out_of_the_layout() {
+        let mut c = desk();
+        enter(&mut c);
+        let actions = c.remove_peer("imac");
+        assert!(matches!(actions.last(), Some(Action::Release { .. })));
+        assert_eq!(c.active_peer(), None);
+        assert!(c.layout.machine_index("imac").is_none());
+        // Its old edge no longer leads anywhere.
+        let out = c.handle(motion(0.0, 500.0, -3.0, 0.0));
+        assert_eq!(out, Outcome::default());
+    }
+
+    #[test]
+    fn removing_another_peer_keeps_the_cursor_where_it_is() {
+        let mut c = Controller::new(
+            "mac",
+            vec![display("builtin", 0.0, 0.0, 1512.0, 982.0, true)],
+        );
+        let screen = vec![display("s", 0.0, 0.0, 1000.0, 800.0, true)];
+        c.set_peer("left", screen.clone(), Point::new(-1000.0, 0.0));
+        c.set_peer("right", screen, Point::new(1512.0, 0.0));
+        c.set_reachable("right", true);
+        c.handle(motion(1511.0, 400.0, 3.0, 0.0));
+        assert_eq!(c.active_peer(), Some("right"));
+        assert!(c.remove_peer("left").is_empty());
+        assert_eq!(c.active_peer(), Some("right"));
+        // Still tracking it on the right-hand machine: pushing left comes home.
+        c.handle(motion(1511.0, 400.0, -10.0, 0.0));
+        assert_eq!(c.active_peer(), None);
+    }
+
+    fn drag(dx: f64, dy: f64) -> Input {
+        Input::Motion {
+            at: Point::new(0.0, 500.0),
+            dx,
+            dy,
+            dragging: true,
+        }
+    }
+
+    #[test]
+    fn dragging_on_the_remote_stays_there() {
+        let mut c = desk();
+        enter(&mut c);
+        c.handle(motion(0.0, 500.0, -100.0, 0.0));
+        let out = c.handle(drag(150.0, 0.0));
+        assert!(
+            matches!(out.actions.as_slice(), [Action::Motion { motion: Motion { x, .. }, .. }] if *x == 1919.0),
+            "{:?}",
+            out.actions
+        );
+        assert_eq!(c.active_peer(), Some("imac"));
+        // Let go, and the same push comes home.
+        c.handle(motion(0.0, 500.0, 50.0, 0.0));
+        assert_eq!(c.active_peer(), None);
+    }
+
+    #[test]
+    fn pushing_out_of_a_corner_crosses_where_it_can() {
+        let mut c = Controller::new(
+            "mac",
+            vec![display("builtin", 0.0, 0.0, 1512.0, 982.0, true)],
+        );
+        let imac = vec![display("eDP-1", 0.0, 0.0, 1920.0, 1080.0, true)];
+        c.set_peer("imac", imac, Point::new(-1920.0, 0.0));
+        c.set_reachable("imac", true);
+        c.handle(motion(0.0, 10.0, -3.0, 0.0));
+        assert_eq!(c.active_peer(), Some("imac"));
+        // Up and to the right from its top-right corner: further up than right, but only the
+        // right-hand side leads anywhere.
+        c.handle(motion(0.0, 10.0, 5.0, -40.0));
+        assert_eq!(c.active_peer(), None);
+    }
+
+    #[test]
+    fn sent_home_by_the_peer_the_cursor_is_on() {
+        let mut c = desk();
+        assert!(c.sent_home_by("imac").is_empty());
+        enter(&mut c);
+        assert!(c.sent_home_by("other").is_empty());
+        assert_eq!(c.active_peer(), Some("imac"));
+        let actions = c.sent_home_by("imac");
+        // Home without a Leave: the iMac already knows.
+        assert!(matches!(actions.as_slice(), [Action::Release { .. }]));
+        assert_eq!(c.active_peer(), None);
     }
 
     #[test]

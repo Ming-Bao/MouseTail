@@ -34,8 +34,9 @@ pub struct Updater {
     /// What the last check found, for `mousetail status` and the bar.
     state: Mutex<State>,
     last_check: Mutex<Option<Instant>>,
-    /// A check or install is under way.
-    busy: tokio::sync::Mutex<()>,
+    /// A check or install is under way (held until a staged release is installed, so a later
+    /// check can't unpack over one that's waiting).
+    busy: Arc<tokio::sync::Mutex<()>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -138,7 +139,7 @@ pub async fn check(node: &Arc<Node>) -> anyhow::Result<Checked> {
         );
     }
     let updater = &node.updater;
-    let Ok(_busy) = updater.busy.try_lock() else {
+    let Ok(busy) = updater.busy.clone().try_lock_owned() else {
         return Ok(match &*updater.state.lock().unwrap() {
             State::Waiting(v) => Checked::Installing(v.clone()),
             _ => Checked::UpToDate,
@@ -157,18 +158,18 @@ pub async fn check(node: &Arc<Node>) -> anyhow::Result<Checked> {
     let version = staged.version.clone();
     let node = node.clone();
     tokio::spawn(async move {
+        let _busy = busy;
         // Never swap things out from under someone using another computer through this one.
         while node.in_use() {
             tokio::time::sleep(Duration::from_secs(15)).await;
         }
         // Give `mousetail update` time to hear back before we restart.
         tokio::time::sleep(Duration::from_secs(1)).await;
-        match install(&staged) {
-            Ok(binary) => restart(&binary),
-            Err(e) => {
-                warn!("couldn't install {}: {e:#}", staged.version);
-                *node.updater.state.lock().unwrap() = State::Failed(format!("{e:#}"));
-            }
+        let result = install(&staged).and_then(|binary| restart(&binary));
+        // Only reached if something went wrong: a restart doesn't come back.
+        if let Err(e) = result {
+            warn!("couldn't install {}: {e:#}", staged.version);
+            *node.updater.state.lock().unwrap() = State::Failed(format!("{e:#}"));
         }
     });
     Ok(Checked::Installing(version))
@@ -250,6 +251,19 @@ fn install(staged: &Staged) -> anyhow::Result<PathBuf> {
     if plugin.is_dir() && new_plugin.is_dir() {
         replace_dir(&new_plugin, &plugin).context("updating the Omarchy bar plugin")?;
     }
+    // The installer's copies of the helper scripts.
+    let helpers = std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/share")
+        })
+        .join("mousetail");
+    for name in ["enable-input.sh", "enable-wake.sh", "uninstall.sh"] {
+        let new = staged.dir.join(name);
+        if helpers.is_dir() && new.is_file() {
+            replace_file(&new, &helpers.join(name)).with_context(|| format!("updating {name}"))?;
+        }
+    }
     info!("installed MouseTail {}", staged.version);
     Ok(binary)
 }
@@ -282,17 +296,21 @@ fn replace_dir(from: &Path, to: &Path) -> anyhow::Result<()> {
 }
 
 /// Become the new version: same process, so the user service carries on as if nothing happened.
-fn restart(binary: &Path) {
+/// Only returns if that failed.
+fn restart(binary: &Path) -> anyhow::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         let err = Command::new(binary)
             .args(std::env::args_os().skip(1))
             .exec();
-        warn!("couldn't restart into the new version: {err}");
+        Err(err).context("restarting into the new version")
     }
     #[cfg(not(unix))]
-    let _ = binary;
+    {
+        let _ = binary;
+        Ok(())
+    }
 }
 
 fn fetch(url: &str, timeout_secs: u32) -> anyhow::Result<Vec<u8>> {

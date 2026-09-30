@@ -106,6 +106,10 @@ pub enum Side {
     Below,
 }
 
+impl Side {
+    pub const ALL: [Side; 4] = [Side::Left, Side::Right, Side::Above, Side::Below];
+}
+
 impl std::str::FromStr for Side {
     type Err = anyhow::Error;
 
@@ -264,26 +268,48 @@ impl Layout {
                 machine,
                 display: d,
             };
-            let a = self.rect(from);
-            for side in [Side::Left, Side::Right, Side::Above, Side::Below] {
-                let (lo, hi) = match side {
-                    Side::Left | Side::Right => (a.y, a.bottom()),
-                    Side::Above | Side::Below => (a.x, a.right()),
-                };
-                let mut v = lo;
-                while v < hi {
-                    if self
-                        .neighbour(from, side, v)
-                        .is_some_and(|c| c.to.machine != machine)
-                    {
-                        out.push((d, side));
-                        break;
-                    }
-                    v += 4.0;
+            for side in Side::ALL {
+                if self.side_leads(from, side, |m| m != machine) {
+                    out.push((d, side));
                 }
             }
         }
         out
+    }
+
+    /// Does pushing off some part of `from`'s `side` edge reach a machine matching `to`?
+    fn side_leads(&self, from: DisplayRef, side: Side, to: impl Fn(usize) -> bool) -> bool {
+        let a = self.rect(from);
+        let (lo, hi) = match side {
+            Side::Left | Side::Right => (a.y, a.bottom()),
+            Side::Above | Side::Below => (a.x, a.right()),
+        };
+        let mut v = lo;
+        while v < hi {
+            if self
+                .neighbour(from, side, v)
+                .is_some_and(|c| to(c.to.machine))
+            {
+                return true;
+            }
+            v += 4.0;
+        }
+        false
+    }
+
+    /// Is machine `m` somewhere the cursor can use: overlapping nothing, and reachable straight
+    /// from machine `anchor`?
+    pub fn well_placed(&self, m: usize, anchor: usize) -> bool {
+        !self.overlaps(m, self.machines[m].offset)
+            && (0..self.machines[anchor].displays.len()).any(|d| {
+                let from = DisplayRef {
+                    machine: anchor,
+                    display: d,
+                };
+                Side::ALL
+                    .into_iter()
+                    .any(|side| self.side_leads(from, side, |to| to == m))
+            })
     }
 
     /// Stretches of display edge where the cursor passes to another computer, for drawing in
@@ -293,7 +319,7 @@ impl Layout {
         let mut out = vec![];
         for from in self.displays().collect::<Vec<_>>() {
             let a = self.rect(from);
-            for side in [Side::Left, Side::Right, Side::Above, Side::Below] {
+            for side in Side::ALL {
                 let (lo, hi) = match side {
                     Side::Left | Side::Right => (a.y, a.bottom()),
                     Side::Above | Side::Below => (a.x, a.right()),

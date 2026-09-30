@@ -27,7 +27,8 @@ Panel {
   readonly property var pairingCode: status.pairing_code || null
   readonly property bool clipboard: status.settings ? status.settings.clipboard === true : true
   readonly property bool audio: status.settings ? status.settings.audio !== false : true
-  readonly property string macName: connectedPeers.length > 0 ? connectedPeers[0].name : "your Mac"
+  // Sound goes to a Mac (it has the speakers): name the one that's connected, if any.
+  readonly property var soundPeer: connectedPeers.find(function(p) { return p.platform === "macos" })
 
   readonly property string summary: {
     if (!running) return "Not running"
@@ -62,14 +63,24 @@ Panel {
     if (!hadCode && pairingCode && !opened) open()
   }
 
-  function setClipboard(on) {
-    setter.command = [binary, "set", "clipboard", on ? "on" : "off"]
+  // Settings changes run one after another; one made while another is still running waits.
+  property var queued: []
+
+  function runSetter(command) {
+    if (setter.running) {
+      queued = queued.concat([command])
+      return
+    }
+    setter.command = command
     setter.running = true
   }
 
+  function setClipboard(on) {
+    runSetter([binary, "set", "clipboard", on ? "on" : "off"])
+  }
+
   function setAudio(on) {
-    setter.command = [binary, "set", "audio", on ? "on" : "off"]
-    setter.running = true
+    runSetter([binary, "set", "audio", on ? "on" : "off"])
   }
 
   Process {
@@ -89,7 +100,16 @@ Panel {
     onTriggered: watcher.running = true
   }
 
-  Process { id: setter }
+  Process {
+    id: setter
+    onExited: {
+      if (root.queued.length > 0) {
+        var next = root.queued[0]
+        root.queued = root.queued.slice(1)
+        root.runSetter(next)
+      }
+    }
+  }
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
@@ -277,7 +297,7 @@ Panel {
           }
 
           SettingRow {
-            label: "Play sound on " + root.macName
+            label: root.soundPeer ? "Play sound on " + root.soundPeer.name : "Play sound on your Mac"
             checked: root.audio
             onToggled: root.setAudio(!root.audio)
           }

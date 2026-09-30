@@ -19,19 +19,19 @@ use mousetail_core::keys::ev;
 use mousetail_core::layout::{Point, Side};
 use mousetail_core::proto::Scroll;
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::{debug, warn};
+use tracing::debug;
 use wayland_client::protocol::wl_pointer::{self, ButtonState};
 use wayland_client::protocol::{
     wl_buffer, wl_compositor, wl_keyboard, wl_output, wl_region, wl_registry, wl_seat, wl_shm,
     wl_shm_pool, wl_surface,
 };
-use wayland_client::{Connection, Dispatch, EventQueue, QueueHandle, WEnum, delegate_noop};
+use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, WEnum, delegate_noop};
 use wayland_protocols::wp::keyboard_shortcuts_inhibit::zv1::client::{
     zwp_keyboard_shortcuts_inhibit_manager_v1::ZwpKeyboardShortcutsInhibitManagerV1,
     zwp_keyboard_shortcuts_inhibitor_v1::ZwpKeyboardShortcutsInhibitorV1,
 };
 use wayland_protocols::wp::pointer_constraints::zv1::client::{
-    zwp_locked_pointer_v1::ZwpLockedPointerV1,
+    zwp_locked_pointer_v1::{self, ZwpLockedPointerV1},
     zwp_pointer_constraints_v1::{Lifetime, ZwpPointerConstraintsV1},
 };
 use wayland_protocols::wp::relative_pointer::zv1::client::{
@@ -85,7 +85,12 @@ impl Capture {
                 Ok((grabber, queue)) => {
                     let _ = ready_tx.send(Ok(()));
                     if let Err(e) = grabber.run(queue, rx, wake_rx) {
-                        warn!("input capture stopped: {e:#}");
+                        // Lost the compositor (it restarted, say). Carrying on would leave the
+                        // controller thinking it can still see the edges, or even that the
+                        // cursor is away; start over with a fresh connection instead, as the
+                        // injection side does.
+                        tracing::error!("input capture stopped: {e:#}");
+                        std::process::exit(1);
                     }
                 }
                 Err(e) => {
@@ -112,13 +117,13 @@ impl Capture {
     }
 }
 
-#[derive(Clone, Default)]
-struct OutputRec {
+/// A monitor, followed as it comes and goes. Its position comes with each `Edge` (from the
+/// same display list the controller uses); here we only need to know which one is which.
+struct Output {
+    /// The registry's name for it, to notice when it's unplugged.
+    global: u32,
+    wl: wl_output::WlOutput,
     name: String,
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32,
 }
 
 struct Zone {
@@ -153,8 +158,14 @@ struct Grabber {
     constraints: ZwpPointerConstraintsV1,
     relative: ZwpRelativePointerManagerV1,
     inhibit: Option<ZwpKeyboardShortcutsInhibitManagerV1>,
-    outputs: Vec<(wl_output::WlOutput, OutputRec)>,
+    xdg_outputs: Option<ZxdgOutputManagerV1>,
+    outputs: Vec<Output>,
+    /// The edges the node wants strips on; rebuilt when they or the monitors change.
+    wanted: Vec<Edge>,
+    /// A rebuild waiting for the current grab to end.
+    rebuild_pending: bool,
     pointer: Option<wl_pointer::WlPointer>,
+    keyboard: Option<wl_keyboard::WlKeyboard>,
     relative_pointer: Option<ZwpRelativePointerV1>,
     zones: Vec<Zone>,
     hovered: Option<usize>,
@@ -178,7 +189,6 @@ struct Globals {
     relative: Option<ZwpRelativePointerManagerV1>,
     inhibit: Option<ZwpKeyboardShortcutsInhibitManagerV1>,
     xdg_outputs: Option<ZxdgOutputManagerV1>,
-    outputs: Vec<(wl_output::WlOutput, OutputRec)>,
 }
 
 impl Grabber {
@@ -211,12 +221,6 @@ impl Grabber {
             .relative
             .clone()
             .with_context(|| need("relative pointer motion"))?;
-        if let Some(m) = &g.xdg_outputs {
-            for (i, (o, _)) in g.outputs.iter().enumerate() {
-                m.get_xdg_output(o, &gqh, i);
-            }
-            gq.roundtrip(&mut g)?;
-        }
 
         let queue = conn.new_event_queue::<Grabber>();
         let qh = queue.handle();
@@ -232,8 +236,12 @@ impl Grabber {
             constraints,
             relative,
             inhibit: g.inhibit.clone(),
-            outputs: g.outputs.clone(),
+            xdg_outputs: g.xdg_outputs.clone(),
+            outputs: vec![],
+            wanted: vec![],
+            rebuild_pending: false,
             pointer: None,
+            keyboard: None,
             relative_pointer: None,
             zones: vec![],
             hovered: None,
@@ -308,13 +316,20 @@ impl Grabber {
 
     fn set_edges(&mut self, edges: Vec<Edge>) {
         let current: Vec<Edge> = self.zones.iter().map(|z| z.edge.clone()).collect();
-        if current == edges {
-            return;
+        self.wanted = edges;
+        if current != self.wanted {
+            self.rebuild();
         }
+    }
+
+    /// Lay the strips out afresh for `wanted` on the monitors there are now.
+    fn rebuild(&mut self) {
         if self.grab.is_some() {
-            // Don't pull the rug out mid-grab; the node re-sends edges often enough.
+            // Don't pull the rug out mid-grab; do it once the cursor is home.
+            self.rebuild_pending = true;
             return;
         }
+        self.rebuild_pending = false;
         for z in self.zones.drain(..) {
             z.layer.destroy();
             z.surface.destroy();
@@ -323,16 +338,19 @@ impl Grabber {
             }
         }
         self.hovered = None;
-        for edge in edges {
-            let Some((wl, out)) = self
+        for edge in self.wanted.clone() {
+            let Some(wl) = self
                 .outputs
                 .iter()
-                .find(|(_, o)| o.name == edge.display)
-                .cloned()
+                .find(|o| o.name == edge.display)
+                .map(|o| o.wl.clone())
             else {
-                debug!("no output called {} for an edge strip", edge.display);
+                // Not announced yet (just plugged in): rebuilt when it is.
+                debug!("no output called {} for an edge strip yet", edge.display);
                 continue;
             };
+            let r = edge.rect;
+            let (x, y, w, h) = (r.x as i32, r.y as i32, r.w as i32, r.h as i32);
             let surface = self.compositor.create_surface(&self.qh, ());
             let index = self.zones.len();
             let layer = self.layer_shell.get_layer_surface(
@@ -344,25 +362,17 @@ impl Grabber {
                 index,
             );
             let (anchor, size, origin) = match edge.side {
-                Side::Left => (
-                    Anchor::Left | Anchor::Top | Anchor::Bottom,
-                    (1, 0),
-                    (out.x, out.y),
-                ),
+                Side::Left => (Anchor::Left | Anchor::Top | Anchor::Bottom, (1, 0), (x, y)),
                 Side::Right => (
                     Anchor::Right | Anchor::Top | Anchor::Bottom,
                     (1, 0),
-                    (out.x + out.w - 1, out.y),
+                    (x + w - 1, y),
                 ),
-                Side::Above => (
-                    Anchor::Top | Anchor::Left | Anchor::Right,
-                    (0, 1),
-                    (out.x, out.y),
-                ),
+                Side::Above => (Anchor::Top | Anchor::Left | Anchor::Right, (0, 1), (x, y)),
                 Side::Below => (
                     Anchor::Bottom | Anchor::Left | Anchor::Right,
                     (0, 1),
-                    (out.x, out.y + out.h - 1),
+                    (x, y + h - 1),
                 ),
             };
             layer.set_anchor(anchor);
@@ -485,6 +495,26 @@ impl Grabber {
         z.surface.commit();
         self.pos = warp;
         self.buttons.clear();
+        if self.rebuild_pending {
+            self.rebuild();
+        }
+    }
+
+    /// Bring the cursor home: the controller decides where, as for the hotkey.
+    fn go_home(&mut self) {
+        let actions = self
+            .controller
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .release();
+        for action in actions {
+            match action {
+                Action::Grab | Action::Release { .. } => self.do_action(&action),
+                other => {
+                    let _ = self.actions.send(other);
+                }
+            }
+        }
     }
 }
 
@@ -526,51 +556,8 @@ impl Dispatch<wl_registry::WlRegistry, ()> for Globals {
                 "zxdg_output_manager_v1" => {
                     g.xdg_outputs = Some(registry.bind(name, version.min(3), qh, ()))
                 }
-                "wl_output" => {
-                    let o = registry.bind(name, version.min(4), qh, ());
-                    g.outputs.push((o, OutputRec::default()));
-                }
                 _ => {}
             }
-        }
-    }
-}
-
-impl Dispatch<ZxdgOutputV1, usize> for Globals {
-    fn event(
-        g: &mut Self,
-        _: &ZxdgOutputV1,
-        event: zxdg_output_v1::Event,
-        index: &usize,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-        let Some((_, o)) = g.outputs.get_mut(*index) else {
-            return;
-        };
-        match event {
-            zxdg_output_v1::Event::LogicalPosition { x, y } => (o.x, o.y) = (x, y),
-            zxdg_output_v1::Event::LogicalSize { width, height } => (o.w, o.h) = (width, height),
-            zxdg_output_v1::Event::Name { name } => o.name = name,
-            _ => {}
-        }
-    }
-}
-
-impl Dispatch<wl_output::WlOutput, ()> for Globals {
-    fn event(
-        g: &mut Self,
-        output: &wl_output::WlOutput,
-        event: wl_output::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-        if let wl_output::Event::Name { name } = event
-            && let Some((_, o)) = g.outputs.iter_mut().find(|(w, _)| w == output)
-            && o.name.is_empty()
-        {
-            o.name = name;
         }
     }
 }
@@ -595,18 +582,90 @@ impl Dispatch<wl_registry::WlRegistry, ()> for Grabber {
         _: &Connection,
         qh: &QueueHandle<Self>,
     ) {
-        // Our own seat binding, so pointer and keyboard events arrive on this queue.
-        if let wl_registry::Event::Global {
-            name,
-            interface,
-            version,
-        } = event
-            && interface == "wl_seat"
-            && s.pointer.is_none()
+        match event {
+            // Our own seat binding, so pointer and keyboard events arrive on this queue.
+            wl_registry::Event::Global {
+                name,
+                interface,
+                version,
+            } if interface == "wl_seat" && s.pointer.is_none() => {
+                let seat: wl_seat::WlSeat = registry.bind(name, version.min(8), qh, ());
+                tracing::trace!("bound seat for capture");
+                s.seat = seat;
+            }
+            // Monitors, now and as they're plugged in. Their names arrive shortly.
+            wl_registry::Event::Global {
+                name,
+                interface,
+                version,
+            } if interface == "wl_output" => {
+                let wl: wl_output::WlOutput = registry.bind(name, version.min(4), qh, ());
+                if let Some(m) = &s.xdg_outputs {
+                    m.get_xdg_output(&wl, qh, name);
+                }
+                s.outputs.push(Output {
+                    global: name,
+                    wl,
+                    name: String::new(),
+                });
+            }
+            wl_registry::Event::GlobalRemove { name } => {
+                if let Some(i) = s.outputs.iter().position(|o| o.global == name) {
+                    let gone = s.outputs.remove(i);
+                    if gone.wl.version() >= 3 {
+                        gone.wl.release();
+                    }
+                    s.rebuild();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Grabber {
+    /// A monitor told us its name: strips waiting for it can go down now.
+    fn output_named(&mut self, global: u32, name: String) {
+        let Some(o) = self.outputs.iter_mut().find(|o| o.global == global) else {
+            return;
+        };
+        if o.name.is_empty() {
+            o.name = name;
+            if self.wanted.iter().any(|e| e.display == o.name) {
+                self.rebuild();
+            }
+        }
+    }
+}
+
+impl Dispatch<wl_output::WlOutput, ()> for Grabber {
+    fn event(
+        s: &mut Self,
+        output: &wl_output::WlOutput,
+        event: wl_output::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wl_output::Event::Name { name } = event
+            && let Some(global) = s.outputs.iter().find(|o| o.wl == *output).map(|o| o.global)
         {
-            let seat: wl_seat::WlSeat = registry.bind(name, version.min(8), qh, ());
-            tracing::trace!("bound seat for capture");
-            s.seat = seat;
+            s.output_named(global, name);
+        }
+    }
+}
+
+impl Dispatch<ZxdgOutputV1, u32> for Grabber {
+    fn event(
+        s: &mut Self,
+        _: &ZxdgOutputV1,
+        event: zxdg_output_v1::Event,
+        global: &u32,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let zxdg_output_v1::Event::Name { name } = event {
+            s.output_named(*global, name);
         }
     }
 }
@@ -630,8 +689,8 @@ impl Dispatch<wl_seat::WlSeat, ()> for Grabber {
                 s.relative_pointer = Some(s.relative.get_relative_pointer(&pointer, qh, ()));
                 s.pointer = Some(pointer);
             }
-            if caps.contains(wl_seat::Capability::Keyboard) {
-                seat.get_keyboard(qh, ());
+            if caps.contains(wl_seat::Capability::Keyboard) && s.keyboard.is_none() {
+                s.keyboard = Some(seat.get_keyboard(qh, ()));
             }
         }
     }
@@ -747,7 +806,11 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Grabber {
             wl_pointer::Event::Frame => {
                 let sc = std::mem::take(&mut s.scroll);
                 if sc.any && s.grab.is_some() {
-                    let notches = (sc.v120 != (0, 0)).then_some((sc.v120.0 / 120, sc.v120.1 / 120));
+                    // Whole notches from a notched wheel. High-resolution wheels send fractions
+                    // of a notch, which go as smooth scrolling (dividing would make them 0).
+                    let whole = sc.v120.0 % 120 == 0 && sc.v120.1 % 120 == 0;
+                    let notches =
+                        (sc.v120 != (0, 0) && whole).then_some((sc.v120.0 / 120, sc.v120.1 / 120));
                     s.feed(Input::Scroll(Scroll {
                         dx: sc.dx,
                         dy: sc.dy,
@@ -811,5 +874,23 @@ delegate_noop!(Grabber: ignore wl_surface::WlSurface);
 delegate_noop!(Grabber: ignore wl_region::WlRegion);
 delegate_noop!(Grabber: ignore wl_buffer::WlBuffer);
 delegate_noop!(Grabber: ignore wl_shm_pool::WlShmPool);
-delegate_noop!(Grabber: ignore ZwpLockedPointerV1);
+
+impl Dispatch<ZwpLockedPointerV1, ()> for Grabber {
+    fn event(
+        s: &mut Self,
+        _: &ZwpLockedPointerV1,
+        event: zwp_locked_pointer_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        // The compositor took the pointer back (the screen locked, another app grabbed it):
+        // nothing reaches us now, so come home rather than stay "away" with no way back.
+        if let zwp_locked_pointer_v1::Event::Unlocked = event
+            && s.grab.is_some()
+        {
+            s.go_home();
+        }
+    }
+}
 delegate_noop!(Grabber: ignore ZwpKeyboardShortcutsInhibitorV1);

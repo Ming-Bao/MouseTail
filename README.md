@@ -83,7 +83,7 @@ let your Mac wake this computer from sleep, run `~/.local/share/mousetail/enable
 
 **Pair:** on a Mac, click the mouse in the menu bar, then **Pair…** next to the other computer;
 on Linux, run `mousetail pair`. Type the code the other computer shows. Then put it where it sits on
-your desk: **Arrange Displays…** on a Mac, or `mousetail place <computer> left` on Linux. Both
+your desk: **Arrange Displays…** on a Mac or in the Omarchy bar, or `mousetail place <computer> left` on Linux. Both
 computers share one arrangement, so you only do this once.
 
 **Updates** install themselves. MouseTail checks for a new release every few hours (and

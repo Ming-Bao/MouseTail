@@ -78,6 +78,8 @@ struct MenuContent: View {
         }
         .padding(10)
         .frame(width: 320)
+        // Otherwise the first control gets a focus ring each time the menu opens.
+        .focusEffectDisabled()
     }
 
     private func soundLabel(_ status: Status) -> String {
@@ -264,6 +266,7 @@ struct PeerRow: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
+                .focusable(false)
             }
         }
         .padding(.horizontal, 6)

@@ -1,7 +1,8 @@
 ## What's new
 
-- Nothing changes in how MouseTail works in this release. It comes with a new website, whose
-  demo shows the crossing ripple the way the app draws it.
+- The Mac download opens in a proper window now: drag MouseTail along the trail into
+  Applications. Nothing changes in how MouseTail works.
+- 0.2.4 brought a new website, whose demo shows the crossing ripple the way the app draws it.
 
 If you're coming from 0.2.2 or earlier, 0.2.3 brought:
 

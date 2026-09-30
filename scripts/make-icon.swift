@@ -3,16 +3,17 @@
 import AppKit
 
 /// Draws the image into a px × px canvas, inset by `inset` (a fraction of px) on every side.
-func render(_ file: String, _ px: Int, inset: Double = 0) -> Data {
+func render(_ file: String, _ px: Int, height: Int? = nil, inset: Double = 0) -> Data {
+    let pw = px, ph = height ?? px
     guard let image = NSImage(contentsOf: URL(fileURLWithPath: file)) else { fatalError("can't read \(file)") }
-    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: px, pixelsHigh: px, bitsPerSample: 8,
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pw, pixelsHigh: ph, bitsPerSample: 8,
                                samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
                                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
     NSGraphicsContext.current?.imageInterpolation = .high
-    let margin = Double(px) * inset
-    image.draw(in: NSRect(x: margin, y: margin, width: Double(px) - 2 * margin, height: Double(px) - 2 * margin))
+    let margin = Double(pw) * inset
+    image.draw(in: NSRect(x: margin, y: margin, width: Double(pw) - 2 * margin, height: Double(ph) - 2 * margin))
     NSGraphicsContext.restoreGraphicsState()
     return rep.representation(using: .png, properties: [:])!
 }
@@ -34,10 +35,10 @@ task.arguments = ["-c", "icns", iconset.path, "-o", resources.appendingPathCompo
 try! task.run()
 task.waitUntilExit()
 
-// Menu bar (template images, 18 pt).
+// Menu bar (template images, 24 × 18 pt: the logo is wider than it is tall).
 for (svg, name) in [("assets/menubar.svg", "MenuBarIcon"), ("assets/menubar-active.svg", "MenuBarIconActive")] {
-    try! render(svg, 18).write(to: resources.appendingPathComponent("\(name).png"))
-    try! render(svg, 36).write(to: resources.appendingPathComponent("\(name)@2x.png"))
+    try! render(svg, 24, height: 18).write(to: resources.appendingPathComponent("\(name).png"))
+    try! render(svg, 48, height: 36).write(to: resources.appendingPathComponent("\(name)@2x.png"))
 }
 
 // Web and README artwork.

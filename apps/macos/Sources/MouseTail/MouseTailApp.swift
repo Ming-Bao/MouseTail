@@ -23,7 +23,8 @@ struct MouseTailApp: App {
     }
 }
 
-/// The little mouse head: outlined normally, filled while the cursor is on another computer.
+/// The logo as a silhouette: the trail is faint normally and lights up while the cursor is on
+/// another computer.
 struct MenuBarIcon: View {
     let active: Bool
 

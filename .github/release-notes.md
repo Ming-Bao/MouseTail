@@ -1,5 +1,10 @@
 ## What's new
 
+- 0.2.7: **Fix Firewall…** on Linux now works on computers that updated themselves to 0.2.6
+  (the script it runs hadn't been installed there).
+
+From 0.2.6:
+
 - Paired computers find each other again by themselves. Each remembers where it last reached
   the other and keeps trying there, and looks again after sleep or a network change, so
   they no longer stay apart for up to an hour after a laptop wakes.

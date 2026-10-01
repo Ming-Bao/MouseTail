@@ -101,6 +101,44 @@ fn state_dir() -> PathBuf {
         .join("mousetail")
 }
 
+/// Helper scripts this release brings that an older updater (which only refreshes the ones it
+/// knew of) won't have installed. Written in place if missing.
+const BUNDLED_HELPERS: &[(&str, &str)] = &[(
+    "enable-firewall.sh",
+    include_str!("../../../scripts/enable-firewall-linux.sh"),
+)];
+
+/// The installer's copies of the helper scripts.
+fn helpers_dir() -> PathBuf {
+    std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/share")
+        })
+        .join("mousetail")
+}
+
+/// Put in place any helper an older release's updater left out.
+fn add_missing_helpers() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = helpers_dir();
+    if !dir.is_dir() {
+        return;
+    }
+    for (name, text) in BUNDLED_HELPERS {
+        let path = dir.join(name);
+        if path.exists() {
+            continue;
+        }
+        let written = std::fs::write(&path, text)
+            .and_then(|()| std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)));
+        match written {
+            Ok(()) => info!("added {}", path.display()),
+            Err(e) => warn!("couldn't add {}: {e}", path.display()),
+        }
+    }
+}
+
 /// Runs for the life of the daemon.
 pub async fn run(node: Arc<Node>) {
     if !supported() {
@@ -109,6 +147,7 @@ pub async fn run(node: Arc<Node>) {
         }
         return;
     }
+    add_missing_helpers();
     // Let the network settle after starting before the first check.
     let mut wait = Duration::from_secs(90);
     loop {
@@ -251,13 +290,7 @@ fn install(staged: &Staged) -> anyhow::Result<PathBuf> {
     if plugin.is_dir() && new_plugin.is_dir() {
         replace_dir(&new_plugin, &plugin).context("updating the Omarchy bar plugin")?;
     }
-    // The installer's copies of the helper scripts.
-    let helpers = std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/share")
-        })
-        .join("mousetail");
+    let helpers = helpers_dir();
     for name in [
         "enable-input.sh",
         "enable-firewall.sh",

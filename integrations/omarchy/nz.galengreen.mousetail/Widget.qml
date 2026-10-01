@@ -210,6 +210,16 @@ Panel {
     }
   }
 
+  // enable-firewall.sh asks for a password, so it runs in a terminal.
+  Process {
+    id: firewallFixer
+    command: ["bash", "-c",
+      "script=\"$HOME/.local/share/mousetail/enable-firewall.sh\"; " +
+      "if command -v omarchy-launch-floating-terminal-with-presentation >/dev/null; then " +
+      "exec omarchy-launch-floating-terminal-with-presentation \"$script\"; fi; " +
+      "exec xdg-terminal-exec bash -c \"$script; read -rp 'Press Enter to close. '\""]
+  }
+
   Process {
     id: loginCheck
     command: ["systemctl", "--user", "is-enabled", "mousetail"]
@@ -350,7 +360,7 @@ Panel {
         Column {
           width: parent.width
           spacing: Style.space(4)
-          visible: root.running && (!!root.status.capture_error || root.status.can_be_controlled === false)
+          visible: root.running && (!!root.status.capture_error || root.status.can_be_controlled === false || !!root.status.firewall)
 
           Note {
             visible: !!root.status.capture_error
@@ -361,6 +371,22 @@ Panel {
           Note {
             visible: root.status.can_be_controlled === false
             text: "Other computers can't control this one yet. Run this once: ~/.local/share/mousetail/enable-input.sh"
+          }
+
+          Note {
+            visible: !!root.status.firewall
+            text: "This computer's firewall stops other computers reaching it, so connecting can be slow or fail."
+          }
+
+          Button {
+            visible: !!root.status.firewall
+            text: "Fix Firewall…"
+            bordered: true
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            fontSize: Style.font.bodySmall
+            enabled: !firewallFixer.running
+            onClicked: firewallFixer.running = true
           }
         }
 

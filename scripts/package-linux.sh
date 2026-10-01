@@ -16,6 +16,7 @@ cp scripts/install-linux.sh "$out/install.sh"
 cp scripts/uninstall-linux.sh "$out/uninstall.sh"
 cp scripts/enable-wake-linux.sh "$out/enable-wake.sh"
 cp scripts/enable-input-linux.sh "$out/enable-input.sh"
+cp scripts/enable-firewall-linux.sh "$out/enable-firewall.sh"
 cp -r integrations/omarchy/nz.galengreen.mousetail "$out/omarchy-plugin/"
 # The plugin's version follows MouseTail's.
 version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
@@ -29,6 +30,7 @@ MouseTail for Linux (Wayland)
   ./uninstall.sh      remove it again
   ./enable-wake.sh    optional: let other computers wake this one from sleep (asks for sudo)
   ./enable-input.sh   only if MouseTail says so (GNOME, KDE): allow it to control this computer
+  ./enable-firewall.sh  only if MouseTail says so (Omarchy, Fedora): let other computers reach it
 
 Then pair: click Pair… in MouseTail on the other computer, or run: mousetail pair
 MouseTail keeps itself up to date (mousetail set updates off to stop that).

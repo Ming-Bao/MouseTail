@@ -258,7 +258,12 @@ fn install(staged: &Staged) -> anyhow::Result<PathBuf> {
             PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/share")
         })
         .join("mousetail");
-    for name in ["enable-input.sh", "enable-wake.sh", "uninstall.sh"] {
+    for name in [
+        "enable-input.sh",
+        "enable-firewall.sh",
+        "enable-wake.sh",
+        "uninstall.sh",
+    ] {
         let new = staged.dir.join(name);
         if helpers.is_dir() && new.is_file() {
             replace_file(&new, &helpers.join(name)).with_context(|| format!("updating {name}"))?;

@@ -225,6 +225,16 @@ impl Endpoints {
         added
     }
 
+    /// The addresses bound right now.
+    pub fn addrs(&self) -> Vec<Ipv4Addr> {
+        self.bound
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(a, _)| a.ip)
+            .collect()
+    }
+
     pub fn all(&self) -> Vec<Endpoint> {
         self.bound
             .lock()

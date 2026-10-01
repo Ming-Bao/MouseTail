@@ -13,7 +13,7 @@ config_home=${XDG_CONFIG_HOME:-$HOME/.config}
 unit_dir=$config_home/systemd/user
 plugin_id=nz.galengreen.mousetail
 omarchy=$config_home/omarchy
-# Helper scripts (enable-input, enable-wake, uninstall) live here, since a `curl | sh` install
+# Helper scripts (enable-input, enable-firewall, enable-wake, uninstall) live here, since a `curl | sh` install
 # deletes its download when it's done.
 share=${XDG_DATA_HOME:-$HOME/.local/share}/mousetail
 
@@ -50,7 +50,7 @@ if [[ -n $missing ]]; then
   exit 1
 fi
 mkdir -p "$share"
-for helper in enable-input enable-wake uninstall; do
+for helper in enable-input enable-firewall enable-wake uninstall; do
   install -m755 "$helpers/$helper$helper_suffix" "$share/$helper.sh"
 done
 
@@ -123,6 +123,22 @@ if ! "$bin_dir/mousetail" status 2>/dev/null | grep -q "can be controlled"; then
   echo
   echo "To let other computers control this one on this desktop, run once (asks for your password):"
   echo "    $share/enable-input.sh"
+fi
+
+# A firewall that drops what it hasn't been told about (Omarchy and Fedora turn one on) stops
+# other computers reaching this one. Offer to open MouseTail's port; sudo asks first.
+if "$bin_dir/mousetail" status 2>/dev/null | grep -q "the firewall"; then
+  echo
+  echo "This computer's firewall stops other computers reaching MouseTail."
+  if [[ -t 1 ]] && { : </dev/tty; } 2>/dev/null; then
+    say "Opening MouseTail's port to your local network (asks for your password)"
+    "$share/enable-firewall.sh" </dev/tty || {
+      echo "    That didn't work. To try again later: $share/enable-firewall.sh"
+    }
+  else
+    echo "To fix it, run once (asks for your password):"
+    echo "    $share/enable-firewall.sh"
+  fi
 fi
 
 if systemctl --user is-active --quiet lan-mouse.service 2>/dev/null; then

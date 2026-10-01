@@ -51,6 +51,12 @@ const SOUND_STOPPED: Duration = Duration::from_secs(2);
 const SETTLE_AFTER_VISIT: Duration = Duration::from_secs(3);
 /// Sound still arriving this soon after pausing is the tail of what was playing.
 const PAUSE_TAIL: Duration = Duration::from_secs(1);
+/// Longest wait between tries of a paired computer that isn't advertising (seconds).
+const REMEMBERED_RETRY_MAX: u64 = 15;
+/// How often to search the network again while a paired computer is nowhere to be seen.
+const SEARCH_WHILE_MISSING: Duration = Duration::from_secs(30);
+/// A gap this much longer than the network check's tick means the computer was asleep.
+const SLEPT: Duration = Duration::from_secs(20);
 /// Minimum gap between pairing codes shown on this machine.
 const PAIR_REQUEST_INTERVAL: Duration = Duration::from_secs(5);
 /// Wrong codes allowed per window before pairing locks for the rest of it. With 4 digits,
@@ -103,7 +109,32 @@ impl PairGuard {
     }
 }
 
-/// Locks are only ever taken in this order: config, peers, discovered, controller, target,
+/// What to dial: everyone advertising, plus paired computers at their remembered addresses
+/// (after any advertised ones), leaving out those connected already. Each comes with whether
+/// it's advertising.
+fn dial_targets(
+    advertised: HashMap<String, Vec<SocketAddr>>,
+    remembered: Vec<(String, Vec<SocketAddr>)>,
+    connected: &HashSet<String>,
+    own_id: &str,
+) -> HashMap<String, (Vec<SocketAddr>, bool)> {
+    let mut wanted: HashMap<String, (Vec<SocketAddr>, bool)> = advertised
+        .into_iter()
+        .map(|(id, addrs)| (id, (addrs, true)))
+        .collect();
+    for (id, addrs) in remembered {
+        let (all, _) = wanted.entry(id).or_insert((vec![], false));
+        for a in addrs {
+            if !all.contains(&a) {
+                all.push(a);
+            }
+        }
+    }
+    wanted.retain(|id, (addrs, _)| !connected.contains(id) && id != own_id && !addrs.is_empty());
+    wanted
+}
+
+/// Locks are only ever taken in this order: config, peers, discovered, dials, controller, target,
 /// pairing. Nothing is sent to a peer (which takes `peers`) while a later lock is held.
 /// `pair_guard`, `left_peer`, `keyboard_warned`, `told_not_paired`, `clipboard` and `displays`
 /// are leaves: nothing else is locked while holding them.
@@ -116,7 +147,14 @@ pub struct Node {
     endpoints: Endpoints,
     port: u16,
     peers: Mutex<HashMap<String, Peer>>,
-    discovered: Mutex<HashMap<String, Discovered>>,
+    /// Computers advertising on the network right now.
+    discovered: Mutex<HashMap<String, Found>>,
+    /// Computers we're trying to reach (advertising, or paired and remembered).
+    dials: Mutex<HashMap<String, Dial>>,
+    /// Asks the network afresh who's there.
+    search: discovery::Search,
+    /// The firewall keeping other computers from dialling us, if any (see `firewall`).
+    firewall: Mutex<Option<&'static str>>,
     pairing: Mutex<HashMap<String, Pairing>>,
     displays: Mutex<Vec<DisplayInfo>>,
     controller: Arc<Mutex<Controller>>,
@@ -196,11 +234,29 @@ struct ClipboardState {
     newest: HashMap<String, u64>,
 }
 
-struct Discovered {
-    found: Found,
+struct Dial {
+    /// Where it's tried, so new addresses are tried straight away.
+    addrs: Vec<SocketAddr>,
+    /// Advertising itself now, rather than only remembered from before.
+    advertised: bool,
     dialing: bool,
     failures: u32,
     next_attempt: Instant,
+}
+
+impl Dial {
+    /// Wait before trying again after a failure. Something advertising is most likely there
+    /// and a failure a brief blip (Wi-Fi hopping channels, a laptop waking up), so stay eager;
+    /// a remembered address may be asleep or gone, so ease off, but not so far that a waking
+    /// computer waits long.
+    fn backoff(&self) -> Duration {
+        let secs = if self.advertised {
+            1u64 << self.failures.min(2)
+        } else {
+            (1u64 << self.failures.min(4)).min(REMEMBERED_RETRY_MAX)
+        };
+        Duration::from_secs(secs)
+    }
 }
 
 enum Pairing {
@@ -283,6 +339,9 @@ impl Node {
             port,
             peers: Mutex::default(),
             discovered: Mutex::default(),
+            dials: Mutex::default(),
+            search: discovery::Search::default(),
+            firewall: Mutex::new(None),
             pairing: Mutex::default(),
             displays: Mutex::new(displays),
             controller,
@@ -321,12 +380,13 @@ impl Node {
         }
         tokio::spawn(node.clone().start_target());
 
-        let (_discovery, found_rx) = discovery::start(&id, &name, port)?;
+        let (_discovery, found_rx) = discovery::start(&id, &name, port, node.search.clone())?;
 
         for endpoint in node.endpoints.all() {
             tokio::spawn(node.clone().accept_loop(endpoint));
         }
         tokio::spawn(node.clone().network_loop());
+        tokio::spawn(node.clone().firewall_loop());
         tokio::spawn(node.clone().discovery_loop(found_rx));
         tokio::spawn(node.clone().dial_loop());
         tokio::spawn(node.clone().action_loop(action_rx));
@@ -467,14 +527,66 @@ impl Node {
     // Connections
 
     /// Follow network changes (Wi-Fi joins, cables plugged in) and accept on new addresses.
+    /// After a network change or a sleep, look for everyone again at once.
     async fn network_loop(self: Arc<Self>) {
-        let mut tick = tokio::time::interval(Duration::from_secs(5));
+        const TICK: Duration = Duration::from_secs(5);
+        let mut tick = tokio::time::interval(TICK);
+        let mut addrs = self.endpoints.addrs();
+        // Wall-clock time: the monotonic clock stops while asleep, on macOS and Linux alike.
+        let mut last = std::time::SystemTime::now();
         loop {
             tick.tick().await;
             for endpoint in self.endpoints.refresh() {
                 debug!("listening on {:?}", endpoint.local_addr());
                 tokio::spawn(self.clone().accept_loop(endpoint));
             }
+            let now = std::time::SystemTime::now();
+            let slept = now.duration_since(last).is_ok_and(|gap| gap > TICK + SLEPT);
+            last = now;
+            let now_addrs = self.endpoints.addrs();
+            if slept || now_addrs != addrs {
+                debug!(
+                    "{}: looking for everyone again",
+                    if slept { "awake" } else { "network changed" }
+                );
+                addrs = now_addrs;
+                self.search.again();
+                self.dial_everyone_now();
+            }
+        }
+    }
+
+    /// Keep an eye on the firewall, which can change (or be fixed) at any time.
+    async fn firewall_loop(self: Arc<Self>) {
+        let mut tick = tokio::time::interval(Duration::from_secs(30));
+        loop {
+            tick.tick().await;
+            let port = self.port;
+            let Ok(now) =
+                tokio::task::spawn_blocking(move || crate::firewall::blocking(port)).await
+            else {
+                continue;
+            };
+            let before = std::mem::replace(&mut *self.firewall.lock().unwrap(), now);
+            if now != before {
+                match now {
+                    Some(f) => warn!(
+                        "the firewall ({f}) stops other computers reaching this one on UDP {port}; \
+                         run ~/.local/share/mousetail/enable-firewall.sh to fix it"
+                    ),
+                    None if before.is_some() => info!("the firewall lets other computers in now"),
+                    None => {}
+                }
+            }
+        }
+    }
+
+    /// Forget any backoff: something changed, so every computer is worth trying again now.
+    fn dial_everyone_now(&self) {
+        let now = Instant::now();
+        for d in self.dials.lock().unwrap().values_mut() {
+            d.failures = 0;
+            d.next_attempt = now;
         }
     }
 
@@ -492,56 +604,95 @@ impl Node {
 
     async fn discovery_loop(self: Arc<Self>, mut rx: mpsc::UnboundedReceiver<discovery::Event>) {
         while let Some(event) = rx.recv().await {
-            let mut discovered = self.discovered.lock().unwrap();
             match event {
                 discovery::Event::Found(found) => {
                     debug!(
                         "discovered {} ({}) at {:?}",
                         found.name, found.id, found.addrs
                     );
-                    let entry = discovered.entry(found.id.clone()).or_insert(Discovered {
-                        found: found.clone(),
-                        dialing: false,
-                        failures: 0,
-                        next_attempt: Instant::now(),
-                    });
-                    if entry.found.addrs != found.addrs {
-                        entry.failures = 0;
-                        entry.next_attempt = Instant::now();
-                    }
                     let newer = found
                         .version
                         .as_deref()
                         .is_some_and(|v| update::is_newer(v, update::VERSION));
-                    entry.found = found;
+                    let id = found.id.clone();
+                    let mut discovered = self.discovered.lock().unwrap();
+                    discovered.insert(id.clone(), found);
+                    // Just heard from: it's there, so don't sit out a backoff.
+                    if let Some(d) = self.dials.lock().unwrap().get_mut(&id) {
+                        d.failures = 0;
+                        d.next_attempt = Instant::now();
+                    }
+                    drop(discovered);
                     if newer {
                         self.updater.nudge();
                     }
                 }
                 discovery::Event::Lost(id) => {
                     debug!("{id} stopped advertising");
-                    discovered.remove(&id);
+                    self.discovered.lock().unwrap().remove(&id);
                 }
             }
         }
     }
 
-    /// Dial every discovered peer we aren't connected to, backing off on failure.
+    /// Dial every computer we aren't connected to: those advertising, and paired ones at
+    /// their remembered addresses (mDNS can be slow, filtered, or confused, and a firewall
+    /// that blocks them dialling us lets us dial them). Back off on failure.
     async fn dial_loop(self: Arc<Self>) {
         let mut tick = tokio::time::interval(Duration::from_secs(1));
+        let mut last_search = Instant::now();
         loop {
             tick.tick().await;
+            let remembered: Vec<(String, Vec<SocketAddr>)> = self
+                .config
+                .lock()
+                .unwrap()
+                .peers
+                .iter()
+                .map(|p| (p.id.clone(), p.addrs.clone()))
+                .collect();
             let connected: HashSet<String> = self.peers.lock().unwrap().keys().cloned().collect();
+            let advertised: HashMap<String, Vec<SocketAddr>> = self
+                .discovered
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(id, f)| (id.clone(), f.addrs.clone()))
+                .collect();
+
+            let missing = remembered
+                .iter()
+                .any(|(id, _)| !connected.contains(id) && !advertised.contains_key(id));
+            if missing && last_search.elapsed() >= SEARCH_WHILE_MISSING {
+                last_search = Instant::now();
+                self.search.again();
+            }
+
+            let wanted = dial_targets(advertised, remembered, &connected, &self.id);
+            let now = Instant::now();
             let due: Vec<(String, Vec<SocketAddr>)> = {
-                let mut discovered = self.discovered.lock().unwrap();
-                discovered
-                    .iter_mut()
-                    .filter(|(id, d)| {
-                        !connected.contains(*id) && !d.dialing && d.next_attempt <= Instant::now()
-                    })
-                    .map(|(id, d)| {
-                        d.dialing = true;
-                        (id.clone(), d.found.addrs.clone())
+                let mut dials = self.dials.lock().unwrap();
+                dials.retain(|id, d| d.dialing || wanted.contains_key(id));
+                wanted
+                    .into_iter()
+                    .filter_map(|(id, (addrs, advertised))| {
+                        let d = dials.entry(id.clone()).or_insert(Dial {
+                            addrs: vec![],
+                            advertised,
+                            dialing: false,
+                            failures: 0,
+                            next_attempt: now,
+                        });
+                        if d.addrs != addrs {
+                            d.addrs = addrs.clone();
+                            d.failures = 0;
+                            d.next_attempt = now;
+                        }
+                        d.advertised = advertised;
+                        (!d.dialing && d.next_attempt <= now).then(|| {
+                            d.dialing = true;
+                            (id, addrs)
+                        })
                     })
                     .collect()
             };
@@ -549,31 +700,25 @@ impl Node {
                 let node = self.clone();
                 tokio::spawn(async move {
                     let result = net::connect_fastest(&node.endpoints.attempts(&addrs)).await;
-                    {
-                        let mut discovered = node.discovered.lock().unwrap();
-                        if let Some(d) = discovered.get_mut(&id) {
-                            // Connected: still "dialing" until the handshake is done and it
-                            // counts as connected, so it isn't dialled again meanwhile.
-                            d.dialing = result.is_ok();
-                            if result.is_err() {
-                                d.failures += 1;
-                                // Stay eager: on a LAN a failure is usually a brief blip
-                                // (Wi-Fi hopping channels, a laptop waking up).
-                                let backoff = 1u64 << d.failures.min(2);
-                                d.next_attempt = Instant::now() + Duration::from_secs(backoff);
-                            } else {
-                                d.failures = 0;
-                            }
+                    if let Some(d) = node.dials.lock().unwrap().get_mut(&id) {
+                        // Connected: still "dialing" until the connection ends, so it isn't
+                        // dialled again meanwhile.
+                        d.dialing = result.is_ok();
+                        if result.is_err() {
+                            d.failures += 1;
+                            d.next_attempt = Instant::now() + d.backoff();
+                        } else {
+                            d.failures = 0;
                         }
                     }
                     match result {
                         Ok(conn) => {
                             node.clone().run_connection(conn, true).await;
-                            if let Some(d) = node.discovered.lock().unwrap().get_mut(&id) {
+                            if let Some(d) = node.dials.lock().unwrap().get_mut(&id) {
                                 d.dialing = false;
                             }
                         }
-                        Err(e) => debug!("couldn't reach {id}: {e:#}"),
+                        Err(e) => debug!("couldn't reach {id} at {addrs:?}: {e:#}"),
                     }
                 });
             }
@@ -662,6 +807,7 @@ impl Node {
             if paired { "paired" } else { "not paired" }
         );
         if paired {
+            self.reached(&id, conn.remote_address());
             self.share_paused(&id);
         }
         self.peer_up(&id);
@@ -756,6 +902,18 @@ impl Node {
             self.peer_down(&id);
         }
         result
+    }
+
+    /// Remember where a paired computer was reached, to dial it there again if it can't be
+    /// found on the network.
+    fn reached(&self, id: &str, addr: SocketAddr) {
+        let addr = SocketAddr::new(addr.ip().to_canonical(), addr.port());
+        let mut config = self.config.lock().unwrap();
+        if config.peer_mut(id).is_some_and(|p| p.reached_at(addr))
+            && let Err(e) = config.save(&self.config_path)
+        {
+            warn!("couldn't save config: {e:#}");
+        }
     }
 
     fn peer(&self, id: &str) -> Option<Peer> {
@@ -1038,6 +1196,12 @@ impl Node {
                 return;
             }
             last.insert(id.to_string(), Instant::now());
+        }
+        // Someone wants it: look for it and try it now, whether or not it can be woken.
+        self.search.again();
+        if let Some(d) = self.dials.lock().unwrap().get_mut(id) {
+            d.failures = 0;
+            d.next_attempt = Instant::now();
         }
         if peer.wake_macs.is_empty() {
             debug!("{} is offline and can't be woken remotely", peer.name);
@@ -2071,6 +2235,7 @@ impl Node {
                 listen_updated,
                 paused: false,
                 paused_updated: 0,
+                addrs: vec![peer.conn.remote_address()],
             })
         });
         if let Some(p) = self.peers.lock().unwrap().get_mut(id) {
@@ -2114,7 +2279,7 @@ impl Node {
                 let name = conn
                     .map(|p| p.hello.name.clone())
                     .or_else(|| config.peer(id).map(|p| p.name.clone()))
-                    .or_else(|| discovered.get(id).map(|d| d.found.name.clone()))
+                    .or_else(|| discovered.get(id).map(|f| f.name.clone()))
                     .unwrap_or_else(|| id.clone());
                 json!({
                     "id": id,
@@ -2125,7 +2290,7 @@ impl Node {
                     "rtt_ms": conn.map(|p| p.conn.rtt().as_secs_f64() * 1000.0),
                     "platform": conn.map(|p| p.hello.platform),
                     "placement": config.peer(id).and_then(|p| p.placement),
-                    "version": discovered.get(id).and_then(|d| d.found.version.clone()),
+                    "version": discovered.get(id).and_then(|f| f.version.clone()),
                     "sound": conn.and_then(|p| self.sound_way(&config, id, p)),
                     "paused": config.peer(id).is_some_and(|p| p.paused),
                 })
@@ -2154,6 +2319,7 @@ impl Node {
             "can_control": self.capture.get().is_some(),
             "keyboard_blocked": platform::keyboard_blocked(),
             "capture_error": *self.capture_error.lock().unwrap(),
+            "firewall": *self.firewall.lock().unwrap(),
             "can_be_controlled": self.target.get().is_some(),
             "displays": *self.displays.lock().unwrap(),
             "controlling": controller.active_peer(),
@@ -2643,6 +2809,31 @@ fn single_instance(paths: &Paths) -> anyhow::Result<std::fs::File> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dials_advertised_and_remembered_computers() {
+        let addr = |s: &str| -> SocketAddr { s.parse().unwrap() };
+        let advertised = HashMap::from([
+            ("mac".to_string(), vec![addr("10.0.0.2:24802")]),
+            ("linked".to_string(), vec![addr("10.0.0.3:24802")]),
+        ]);
+        let remembered = vec![
+            (
+                "mac".to_string(),
+                vec![addr("10.0.0.9:24802"), addr("10.0.0.2:24802")],
+            ),
+            ("asleep".to_string(), vec![addr("10.0.0.4:24802")]),
+            ("never-reached".to_string(), vec![]),
+        ];
+        let connected = HashSet::from(["linked".to_string()]);
+        let wanted = dial_targets(advertised, remembered, &connected, "me");
+        assert_eq!(
+            wanted["mac"],
+            (vec![addr("10.0.0.2:24802"), addr("10.0.0.9:24802")], true)
+        );
+        assert_eq!(wanted["asleep"], (vec![addr("10.0.0.4:24802")], false));
+        assert_eq!(wanted.len(), 2);
+    }
 
     #[test]
     fn only_one_daemon_at_a_time() {

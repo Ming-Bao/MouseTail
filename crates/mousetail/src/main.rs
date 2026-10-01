@@ -1,5 +1,6 @@
 //! MouseTail: share one keyboard, mouse and clipboard between machines on the LAN.
 
+mod firewall;
 mod ipc;
 mod node;
 mod paths;
@@ -276,6 +277,13 @@ fn status_text(v: &Value) -> String {
     }
     if let Some(peer) = v["controlled_by"].as_str() {
         let _ = writeln!(out, "  being controlled by {peer}");
+    }
+    if let Some(firewall) = v["firewall"].as_str() {
+        let _ = writeln!(
+            out,
+            "  the firewall ({firewall}) stops other computers reaching this one; to fix it, run \
+             once (asks for your password):\n    ~/.local/share/mousetail/enable-firewall.sh"
+        );
     }
     let _ = writeln!(out, "Displays:");
     for (i, d) in v["displays"].as_array().into_iter().flatten().enumerate() {

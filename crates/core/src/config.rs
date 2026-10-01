@@ -3,6 +3,7 @@
 
 use std::fs;
 use std::io::Write;
+use std::net::SocketAddr;
 use std::path::Path;
 
 use serde::de::DeserializeOwned;
@@ -108,6 +109,26 @@ pub struct PeerConfig {
     /// computers compare.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub paused_updated: u64,
+    /// Where it was last reached, newest first. Tried whenever it can't be found on the
+    /// network, which some networks (and firewalls) get in the way of.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub addrs: Vec<SocketAddr>,
+}
+
+/// How many of a peer's addresses to remember.
+pub const REMEMBERED_ADDRS: usize = 4;
+
+impl PeerConfig {
+    /// Note that `addr` just worked. Returns whether anything changed.
+    pub fn reached_at(&mut self, addr: SocketAddr) -> bool {
+        if self.addrs.first() == Some(&addr) {
+            return false;
+        }
+        self.addrs.retain(|a| *a != addr);
+        self.addrs.insert(0, addr);
+        self.addrs.truncate(REMEMBERED_ADDRS);
+        true
+    }
 }
 
 fn is_false(v: &bool) -> bool {
@@ -246,10 +267,27 @@ mod tests {
             listen_updated: 7,
             paused: true,
             paused_updated: 9,
+            addrs: vec!["192.168.1.20:24802".parse().unwrap()],
         });
         let text = toml::to_string_pretty(&c).unwrap();
         assert_eq!(toml::from_str::<Config>(&text).unwrap(), c);
         assert!(c.find_peer("OMARCHY").is_some());
+    }
+
+    #[test]
+    fn remembers_where_peers_were_reached() {
+        let mut p: PeerConfig = toml::from_str("id = 'a'\nname = 'a'\nfingerprint = 'a'").unwrap();
+        let addr = |s: &str| -> SocketAddr { s.parse().unwrap() };
+        assert!(p.reached_at(addr("10.0.0.1:1")));
+        assert!(!p.reached_at(addr("10.0.0.1:1")));
+        for i in 2..=6 {
+            assert!(p.reached_at(addr(&format!("10.0.0.{i}:1"))));
+        }
+        assert!(p.reached_at(addr("10.0.0.4:1")));
+        assert_eq!(
+            p.addrs,
+            ["10.0.0.4:1", "10.0.0.6:1", "10.0.0.5:1", "10.0.0.3:1"].map(addr)
+        );
     }
 
     #[test]
@@ -266,6 +304,7 @@ mod tests {
             listen_updated: 0,
             paused: false,
             paused_updated: 0,
+            addrs: vec![],
         };
         let mut c = Config::default();
         c.add_peer(peer("abc1", "iMac"));

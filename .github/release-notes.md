@@ -1,8 +1,19 @@
 ## What's new
 
-- The Mac download opens in a proper window now: drag MouseTail along the trail into
-  Applications. Nothing changes in how MouseTail works.
-- 0.2.4 brought a new website, whose demo shows the crossing ripple the way the app draws it.
+- Paired computers find each other again by themselves. Each remembers where it last reached
+  the other and keeps trying there, and looks again after sleep or a network change, so
+  they no longer stay apart for up to an hour after a laptop wakes.
+- Linux: if the firewall stops other computers reaching MouseTail (Omarchy and Fedora turn
+  one on), the Omarchy panel says so and **Fix Firewall…** opens MouseTail's port to your
+  local network (it asks for your password). Or run
+  `~/.local/share/mousetail/enable-firewall.sh`. New installs offer it straight away.
+- A Mac on Wi-Fi and Ethernet at once no longer confuses other computers about its name and
+  address.
+- The crossing ripple shows on every display again after a Mac wakes from sleep, rather than
+  going missing on an external monitor.
+
+Also since 0.2.3: the Mac download opens in a proper window (drag MouseTail along the trail
+into Applications), and a new website.
 
 If you're coming from 0.2.2 or earlier, 0.2.3 brought:
 

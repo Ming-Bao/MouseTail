@@ -238,6 +238,14 @@ impl State {
                 .zip(&self.overlays)
                 .all(|((r, s, _), o)| *r == o.rect && *s == o.scale);
         if same {
+            // When a display goes away (a monitor asleep or unplugged), macOS moves its window
+            // onto another display, and leaves it there when the display comes back where it
+            // was. Put any it moved back.
+            for ((_, _, frame), o) in wanted.iter().zip(&self.overlays) {
+                if o.window.frame() != *frame {
+                    o.window.setFrame_display(*frame, false);
+                }
+            }
             return;
         }
         for o in self.overlays.drain(..) {

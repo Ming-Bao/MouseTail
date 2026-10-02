@@ -1,0 +1,10 @@
+/* The top-bar menu, as wide as the Omarchy panel. */
+.mousetail-menu { width: 22em; }
+.mousetail-title { font-weight: bold; font-size: 1.15em; }
+.mousetail-summary,
+.mousetail-note { font-size: 0.9em; }
+.mousetail-urgent { font-size: 0.9em; color: #f66151; }
+.mousetail-logo { margin-right: 6px; }
+.mousetail-actions { spacing: 6px; }
+.mousetail-button { padding: 4px 12px; font-size: 0.9em; }
+.mousetail-icon-button { padding: 5px; border-radius: 99px; }

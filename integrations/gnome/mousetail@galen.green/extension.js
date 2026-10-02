@@ -16,6 +16,7 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 import * as Status from './status.js';
+import {ArrangeDialog} from './arrange.js';
 
 const BINARY = GLib.build_filenamev([GLib.get_home_dir(), '.local', 'bin', 'mousetail']);
 const HELPERS = GLib.build_filenamev([GLib.get_user_data_dir(), 'mousetail']);
@@ -282,7 +283,14 @@ class Indicator extends PanelMenu.Button {
     }
 
     _openArrange() {
-        // Task 4.
+        this._arrangeDialog?.close();
+        const dialog = new ArrangeDialog(BINARY, (argv, done) => run(argv, this._cancellable, done));
+        dialog.connect('destroy', () => {
+            if (this._arrangeDialog === dialog)
+                this._arrangeDialog = null;
+        });
+        this._arrangeDialog = dialog;
+        dialog.open();
     }
 
     // -------------------------------------------------------------- sections
@@ -562,6 +570,7 @@ class Indicator extends PanelMenu.Button {
         this._cancellable.cancel();
         this._pairing?.proc?.force_exit();
         this._watcher?.force_exit();
+        this._arrangeDialog?.close();
         if (this._watchTimer)
             GLib.source_remove(this._watchTimer);
     }

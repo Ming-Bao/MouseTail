@@ -145,6 +145,17 @@ class Indicator extends PanelMenu.Button {
             if (open)
                 this._opened();
         });
+        // Escape in the code field stops pairing, as on Omarchy. The panel's menu manager
+        // takes Escape before the field sees it, to close the menu, so this goes first:
+        // connected before the menu joins the panel.
+        this.menu.actor.connect('captured-event', (_actor, event) => {
+            if (event.type() !== Clutter.EventType.KEY_PRESS ||
+                event.get_key_symbol() !== Clutter.KEY_Escape ||
+                !this._codeEntry?.clutter_text.has_key_focus())
+                return Clutter.EVENT_PROPAGATE;
+            this._cancelPairing();
+            return Clutter.EVENT_STOP;
+        });
         this.connect('destroy', () => this._stop());
         this._watch();
     }
@@ -376,12 +387,6 @@ class Indicator extends PanelMenu.Button {
         entry.clutter_text.connect('activate', () => {
             this._sendCode(entry.get_text());
             entry.set_text('');
-        });
-        entry.clutter_text.connect('key-press-event', (_actor, event) => {
-            if (event.get_key_symbol() !== Clutter.KEY_Escape)
-                return Clutter.EVENT_PROPAGATE;
-            this._cancelPairing();
-            return Clutter.EVENT_STOP;
         });
         entry.connect('destroy', () => {
             if (this._codeEntry === entry)

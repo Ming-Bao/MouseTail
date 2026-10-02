@@ -480,14 +480,16 @@ impl Node {
     async fn start_capture(self: Arc<Self>, actions: mpsc::UnboundedSender<Action>) {
         let mut prompt = true;
         loop {
-            // Not on an async worker: it can wait a long time (on GNOME, for someone to answer
-            // the permission dialog).
+            // On its own thread: it can wait as long as someone takes to answer GNOME's
+            // permission dialog, and quitting waits for blocking tasks but not for threads.
             let (controller, actions) = (self.controller.clone(), actions.clone());
-            let started = tokio::task::spawn_blocking(move || {
-                platform::Capture::start(controller, actions, prompt)
-            })
-            .await
-            .unwrap_or_else(|e| Err(anyhow::anyhow!("starting capture: {e}")));
+            let (done, started) = oneshot::channel();
+            std::thread::spawn(move || {
+                let _ = done.send(platform::Capture::start(controller, actions, prompt));
+            });
+            let started = started
+                .await
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("starting capture stopped")));
             match started {
                 Ok(c) => {
                     let _ = self.capture.set(c);

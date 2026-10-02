@@ -79,10 +79,13 @@ pub(super) fn run(
         };
         let _ = ready.send(Ok(()));
         if let Err(e) = portal.run(events, cmds, wake).await {
-            warn!("input capture stopped: {e:#}");
+            tracing::error!("input capture stopped: {e:#}");
         }
-        // Nothing can bring the cursor back from here on, so it comes home now.
+        // The desktop ended capture (or the portal went away). Nothing can bring the cursor
+        // back or see the edges from here on, so it comes home and MouseTail starts over, as
+        // when it loses layer-shell; GNOME asks again.
         portal.go_home().await;
+        std::process::exit(1);
     });
 }
 

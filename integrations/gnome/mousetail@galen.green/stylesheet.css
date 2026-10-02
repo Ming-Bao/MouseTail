@@ -8,3 +8,8 @@
 .mousetail-actions { spacing: 6px; }
 .mousetail-button { padding: 4px 12px; font-size: 0.9em; }
 .mousetail-icon-button { padding: 5px; border-radius: 99px; }
+.mousetail-code { font-size: 2.2em; font-weight: 600; }
+.mousetail-peer { font-weight: 500; }
+.mousetail-peer-detail { font-size: 0.85em; }
+.mousetail-code-entry { min-width: 6em; }
+.mousetail-forget:hover { color: #f66151; }

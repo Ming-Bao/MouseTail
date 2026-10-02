@@ -224,9 +224,24 @@ class Indicator extends PanelMenu.Button {
         const st = this._status;
         const running = st.running === true;
         this._summary.text = Status.summary(st);
+        this._refill(this._problems,
+            running && [st.capture_error, st.can_be_controlled, st.firewall, this._fixingFirewall],
+            () => this._problemItems());
+        this._refill(this._code, running && st.pairing_code, () => this._codeItems());
+        const peers = running ? Status.shownPeers(st) : [];
+        const pairing = this._pairing && [this._pairing.id, !!this._pairing.proc, this._pairing.error];
+        this._refill(this._computers,
+            running && [peers.map(p => [p.id, p.name, p.paired, p.connected, p.paused, Status.peerDetail(st, p)]), pairing],
+            () => this._computerItems(peers));
+        if (this._focusEntry) {
+            // Just shown: focus it, so the code can just be typed.
+            if (this.menu.isOpen)
+                this._focusEntry.grab_key_focus();
+            this._focusEntry = null;
+        }
 
         this._computersHeading.visible = running;
-        this._arrange.visible = running && Status.shownPeers(st).some(p => p.paired);
+        this._arrange.visible = running && peers.some(p => p.paired);
         this._settingsHeading.visible = running;
         this._syncing = true;
         for (const {item, key} of this._switches) {
@@ -263,10 +278,198 @@ class Indicator extends PanelMenu.Button {
             this._update();
         });
         this._update();
+        this._codeEntry?.grab_key_focus();
     }
 
     _openArrange() {
         // Task 4.
+    }
+
+    // -------------------------------------------------------------- sections
+
+    _problemItems() {
+        const st = this._status;
+        const items = [];
+        if (st.capture_error)
+            items.push(row(note(st.capture_error, 'mousetail-urgent')));
+        if (st.can_be_controlled === false) {
+            const script = `${HELPERS.replace(GLib.get_home_dir(), '~')}/enable-input.sh`;
+            items.push(row(note(`Other computers can't control this one yet. Run this once: ${script}`)));
+        }
+        if (st.firewall) {
+            items.push(row(note("This computer's firewall stops other computers reaching it, so connecting can be slow or fail.")));
+            const fix = button('Fix Firewall…', () => this._fixFirewall());
+            fix.reactive = !this._fixingFirewall;
+            items.push(row(fix));
+        }
+        return items;
+    }
+
+    _codeItems() {
+        const code = this._status.pairing_code;
+        return [
+            new PopupMenu.PopupSeparatorMenuItem('Pairing code'),
+            row(new St.Label({text: code.code.split('').join(' '), style_class: 'mousetail-code'})),
+            row(note(`Type this on ${code.name || 'your other computer'} to connect it.`)),
+        ];
+    }
+
+    _computerItems(peers) {
+        if (peers.length === 0)
+            return [row(note('Looking for other computers on your network…'))];
+        return peers.flatMap(p => this._peerItems(p));
+    }
+
+    _peerItems(p) {
+        const pairing = this._pairing?.id === p.id ? this._pairing : null;
+        const text = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        const name = new St.Label({text: p.name, style_class: 'mousetail-peer'});
+        if (!p.connected || p.paused)
+            name.opacity = 140;
+        text.add_child(name);
+        const detail = new St.Label({text: Status.peerDetail(this._status, p), style_class: 'mousetail-peer-detail'});
+        detail.opacity = 165;
+        text.add_child(detail);
+
+        const controls = [text];
+        if (!p.paired && p.connected && !pairing?.proc)
+            controls.push(button('Pair…', () => this._startPairing(p)));
+        if (p.paired) {
+            controls.push(iconButton(
+                p.paused ? 'media-playback-start-symbolic' : 'media-playback-pause-symbolic',
+                p.paused ? `Resume ${p.name}` : `Pause ${p.name} without forgetting it`,
+                () => this._command([BINARY, p.paused ? 'resume' : 'pause', p.id])));
+            controls.push(iconButton('window-close-symbolic', `Forget ${p.name}`,
+                () => this._command([BINARY, 'unpair', p.id]), 'mousetail-forget'));
+        }
+        const items = [row(...controls)];
+        if (pairing?.proc)
+            items.push(...this._codeEntryItems(p, pairing));
+        if (pairing?.error)
+            items.push(row(note(pairing.error, 'mousetail-urgent')));
+        return items;
+    }
+
+    /** Pairing: the other computer shows a code to type here. */
+    _codeEntryItems(p, pairing) {
+        const entry = new St.Entry({
+            hint_text: 'Code',
+            text: pairing.typed,
+            can_focus: true,
+            x_expand: true,
+            style_class: 'mousetail-code-entry',
+        });
+        entry.clutter_text.max_length = 8;
+        entry.clutter_text.connect('text-changed', () => (pairing.typed = entry.get_text()));
+        entry.clutter_text.connect('activate', () => {
+            this._sendCode(entry.get_text());
+            entry.set_text('');
+        });
+        entry.clutter_text.connect('key-press-event', (_actor, event) => {
+            if (event.get_key_symbol() !== Clutter.KEY_Escape)
+                return Clutter.EVENT_PROPAGATE;
+            this._cancelPairing();
+            return Clutter.EVENT_STOP;
+        });
+        entry.connect('destroy', () => {
+            if (this._codeEntry === entry)
+                this._codeEntry = null;
+        });
+        this._codeEntry = entry;
+        this._focusEntry = entry;
+        return [
+            row(note(`Type the code showing on ${p.name}:`)),
+            row(entry, button('Cancel', () => this._cancelPairing())),
+        ];
+    }
+
+    // -------------------------------------------------------------- pairing
+
+    /** `mousetail pair` asks the other computer to show a code, then reads it from stdin. A
+     * wrong code ends it, so the row offers Pair… again, for a fresh code. */
+    _startPairing(p) {
+        this._cancelPairing(false);
+        const pairing = {id: p.id, proc: null, error: '', said: '', typed: '', paired: false};
+        this._pairing = pairing;
+        try {
+            pairing.proc = Gio.Subprocess.new([BINARY, 'pair', p.id],
+                Gio.SubprocessFlags.STDIN_PIPE | Gio.SubprocessFlags.STDOUT_PIPE |
+                Gio.SubprocessFlags.STDERR_PIPE);
+        } catch (e) {
+            pairing.error = e.message;
+            this._update();
+            return;
+        }
+        let waiting = 2; // its exit, and the end of what it says on stderr
+        const finished = () => {
+            if (--waiting > 0 || this._pairing !== pairing)
+                return;
+            if (pairing.paired) {
+                this._pairing = null;
+            } else {
+                pairing.proc = null;
+                pairing.error = said(pairing.said) || "That didn't work. Try again.";
+            }
+            this._update();
+        };
+        readLines(pairing.proc.get_stdout_pipe(), this._cancellable, line => {
+            if (line.includes('Paired with')) {
+                pairing.paired = true;
+                this._message = line.slice(line.indexOf('Paired with')).trim();
+            }
+        });
+        readLines(pairing.proc.get_stderr_pipe(), this._cancellable,
+            line => (pairing.said += `${line}\n`), finished);
+        pairing.proc.wait_async(this._cancellable, (proc, result) => {
+            try {
+                proc.wait_finish(result);
+            } catch {
+                return; // Cancelled: the extension is going away.
+            }
+            finished();
+        });
+        this._update();
+    }
+
+    _sendCode(code) {
+        code = code.trim();
+        const pairing = this._pairing;
+        if (code === '' || !pairing?.proc)
+            return;
+        pairing.error = '';
+        try {
+            const stdin = pairing.proc.get_stdin_pipe();
+            stdin.write_all(new TextEncoder().encode(`${code}\n`), null);
+            stdin.flush(null);
+        } catch (e) {
+            pairing.error = e.message;
+            this._update();
+        }
+    }
+
+    _cancelPairing(update = true) {
+        const pairing = this._pairing;
+        this._pairing = null;
+        pairing?.proc?.force_exit();
+        if (update)
+            this._update();
+    }
+
+    /** enable-firewall.sh asks for a password, so it runs in a terminal: the first there is. */
+    _fixFirewall() {
+        const script = `${GLib.shell_quote(`${HELPERS}/enable-firewall.sh`)}; read -rp 'Press Enter to close. '`;
+        const terminal = 'command -v xdg-terminal-exec >/dev/null && exec xdg-terminal-exec bash -c "$0"; ' +
+            'for t in ptyxis kgx gnome-terminal; do command -v "$t" >/dev/null && exec "$t" -- bash -c "$0"; done';
+        this._fixingFirewall = true;
+        this._update();
+        run(['bash', '-c', terminal, script], this._cancellable, () => {
+            this._fixingFirewall = false;
+            this._update();
+        });
     }
 
     // -------------------------------------------------------------- commands
@@ -347,12 +550,17 @@ class Indicator extends PanelMenu.Button {
     }
 
     _setStatus(status) {
+        const hadCode = !!this._status.pairing_code;
         this._status = status;
         this._update();
+        // A new pairing code is the one thing worth interrupting for.
+        if (!hadCode && status.pairing_code && !this.menu.isOpen)
+            this.menu.open();
     }
 
     _stop() {
         this._cancellable.cancel();
+        this._pairing?.proc?.force_exit();
         this._watcher?.force_exit();
         if (this._watchTimer)
             GLib.source_remove(this._watchTimer);

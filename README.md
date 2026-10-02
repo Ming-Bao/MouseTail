@@ -75,7 +75,7 @@ curl -fsSL https://mousetail.galen.green/install.sh | sh
 ```
 
 This installs `~/.local/bin/mousetail`, runs it as a systemd user service that starts with your
-desktop and adds an icon to the bar on Omarchy, or to the top bar on GNOME (from your next
+desktop and adds an icon to the bar on Omarchy, or to the top bar on GNOME 50 (from your next
 login). On GNOME or KDE the installer will ask you to run
 `~/.local/share/mousetail/enable-input.sh` once (it needs your password) so other
 computers can control this one. `~/.local/share/mousetail/uninstall.sh` removes everything. To

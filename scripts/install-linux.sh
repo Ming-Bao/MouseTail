@@ -126,7 +126,13 @@ if [[ -d $omarchy ]]; then
   fi
 fi
 
-if on_gnome && [[ -d $gnome_src ]]; then
+# GNOME only runs an extension made for its version.
+gnome_version=$(gnome-shell --version 2>/dev/null | grep -oE '[0-9]+' | head -1 || true)
+gnome_supported=$(grep -so '"shell-version": *\[[^]]*' "$gnome_src/metadata.json" | grep -oE '[0-9]+' | paste -sd/ || true)
+if on_gnome && [[ -n $gnome_version && -n $gnome_supported && /$gnome_supported/ != */$gnome_version/* ]]; then
+  echo
+  echo "MouseTail's top-bar menu needs GNOME $gnome_supported (this is GNOME $gnome_version), so it isn't added."
+elif on_gnome && [[ -d $gnome_src ]]; then
   say "Adding MouseTail to GNOME's top bar"
   rm -rf "${gnome_extensions:?}/$gnome_uuid"
   mkdir -p "$gnome_extensions"

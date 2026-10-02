@@ -335,14 +335,25 @@ fn replace_dir(from: &Path, to: &Path) -> anyhow::Result<()> {
     let old = to.with_file_name(format!(".{name}.old"));
     let _ = std::fs::remove_dir_all(&temp);
     let _ = std::fs::remove_dir_all(&old);
-    std::fs::create_dir_all(&temp)?;
-    for entry in std::fs::read_dir(from)? {
-        let entry = entry?;
-        std::fs::copy(entry.path(), temp.join(entry.file_name()))?;
-    }
+    copy_dir(from, &temp)?;
     std::fs::rename(to, &old)?;
     std::fs::rename(&temp, to)?;
     let _ = std::fs::remove_dir_all(&old);
+    Ok(())
+}
+
+/// Copy a folder with everything in it (the GNOME extension has `icons/`).
+fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let to = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &to)?;
+        } else {
+            std::fs::copy(entry.path(), to)?;
+        }
+    }
     Ok(())
 }
 
@@ -391,4 +402,37 @@ fn run_ok(cmd: &mut Command) -> anyhow::Result<()> {
         bail!("{}", String::from_utf8_lossy(&out.stderr).trim());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn replacing_a_folder_brings_its_subfolders_and_drops_what_went() {
+        let root =
+            std::env::temp_dir().join(format!("mousetail-replace-dir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (new, installed) = (root.join("new"), root.join("installed"));
+        std::fs::create_dir_all(new.join("icons")).unwrap();
+        std::fs::write(new.join("extension.js"), "new").unwrap();
+        std::fs::write(new.join("icons/mousetail-symbolic.svg"), "<svg/>").unwrap();
+        std::fs::create_dir_all(&installed).unwrap();
+        std::fs::write(installed.join("extension.js"), "old").unwrap();
+        std::fs::write(installed.join("gone.js"), "old").unwrap();
+
+        let replaced = replace_dir(&new, &installed);
+        let read = |path: &str| std::fs::read_to_string(installed.join(path)).ok();
+        let (js, icon, gone) = (
+            read("extension.js"),
+            read("icons/mousetail-symbolic.svg"),
+            read("gone.js"),
+        );
+        let _ = std::fs::remove_dir_all(&root);
+
+        replaced.unwrap();
+        assert_eq!(js.as_deref(), Some("new"));
+        assert_eq!(icon.as_deref(), Some("<svg/>"));
+        assert_eq!(gone, None);
+    }
 }

@@ -50,7 +50,8 @@ planned; the platform layer has room for it.
   serves the CLI and the Omarchy bar plugin, so every front end sees the same thing.
 - **Linux daemon** `mousetail run`: headless, runs as a systemd user service started with the
   Hyprland session. No window. Status via an Omarchy shell bar plugin (Omarchy 4 replaced
-  Waybar with its Quickshell shell); pairing and events via desktop notifications.
+  Waybar with its Quickshell shell); pairing and events via desktop notifications. On GNOME,
+  a Shell extension (`integrations/gnome`) does the same from the top bar.
   Feasibility of every piece below is recorded in [`research/RESULTS.md`](research/RESULTS.md).
 
 ### Roles
@@ -338,7 +339,7 @@ practice the iMac dials the Mac and the Omarchy install needs no firewall change
   and installs by relaunching the app, but holds the install until nobody is using another
   computer through this Mac.
 - **Linux:** the daemon does the same (`crates/mousetail/src/update.rs`): verify, unpack, test-run
-  the new binary's `--version`, wait until idle, swap the binary and bar plugin by renaming,
+  the new binary's `--version`, wait until idle, swap the binary, bar plugin and GNOME extension by renaming,
   keep the old binary in `~/.local/state/mousetail/mousetail.previous`, then `exec` the new one
   so the systemd service carries straight on. Only installer-made installs update themselves.
 - Discovery advertises each computer's version (TXT `app`); seeing a newer one prompts a check

@@ -276,7 +276,7 @@
           </thead>
           <tbody>
             <tr class="group"><th scope="rowgroup" colspan="7">Mouse and keyboard</th></tr>
-            <tr><th scope="row">Control other computers from here</th><td><span class="s yes">Yes<sup><a href="#fn1">1</a></sup></span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s no">Not yet</span></td><td><span class="s planned">Planned</span></td></tr>
+            <tr><th scope="row">Control other computers from here</th><td><span class="s yes">Yes<sup><a href="#fn1">1</a></sup></span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes<sup><a href="#fn9">9</a></sup></span></td><td><span class="s planned">Planned</span></td></tr>
             <tr><th scope="row">Be controlled from another computer</th><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s setup">One-time setup<sup><a href="#fn2">2</a></sup></span></td><td><span class="s setup">One-time setup<sup><a href="#fn2">2</a></sup></span></td><td><span class="s planned">Planned</span></td></tr>
             <tr><th scope="row">More than two computers<span class="row-note">Each beside the one you sit at, and hop straight between them</span></th><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s planned">Planned</span></td></tr>
             <tr><th scope="row">Multiple displays on either side<span class="row-note">Plug one in or unplug it and MouseTail keeps up</span></th><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s yes">Yes</span></td><td><span class="s planned">Planned</span></td></tr>
@@ -318,6 +318,7 @@
         <li id="fn6">Run <code>enable-wake.sh</code> once. Needs NetworkManager and a network card that can be woken.</li>
         <li id="fn7">Omarchy only. Plain Hyprland uses the command line.</li>
         <li id="fn8">If your desktop doesn't start systemd's graphical session (Hyprland or Sway without uwsm, say), add one line to its config. The installer shows you which.</li>
+        <li id="fn9">GNOME asks each time MouseTail starts: turn on Allow Remote Input Capturing, then Share.</li>
       </ol>
       <p class="support-more">Linux means Wayland desktops with systemd and PipeWire. Keys are sent by position, so give both computers the same keyboard layout. Using something else? <a class="text-link" href="https://github.com/galengreen/mousetail/issues">Tell us how it goes <svg class="i" viewBox="0 0 16 16"><path d="M5 11 11 5m0 0H6m5 0v5"/></svg></a></p>
     </section>

@@ -50,7 +50,7 @@ Linux → Linux, and each can be both at different times.
 | **Linux: Hyprland** (incl. [Omarchy](https://omarchy.org)) | Yes | Yes |
 | **Linux: Sway, river, niri and other wlroots desktops** | Yes, untested | Yes, untested |
 | **Linux: KDE Plasma** | Yes, untested | Yes, after `enable-input.sh`, untested |
-| **Linux: GNOME** | Not yet | Yes, after `enable-input.sh`, untested |
+| **Linux: GNOME** | Yes; GNOME asks each time MouseTail starts | Yes, after `enable-input.sh`, untested |
 | **Windows** | Planned | Planned |
 
 Clipboard works everywhere except GNOME (which doesn't let background apps use the

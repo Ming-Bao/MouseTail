@@ -480,7 +480,15 @@ impl Node {
     async fn start_capture(self: Arc<Self>, actions: mpsc::UnboundedSender<Action>) {
         let mut prompt = true;
         loop {
-            match platform::Capture::start(self.controller.clone(), actions.clone(), prompt) {
+            // Not on an async worker: it can wait a long time (on GNOME, for someone to answer
+            // the permission dialog).
+            let (controller, actions) = (self.controller.clone(), actions.clone());
+            let started = tokio::task::spawn_blocking(move || {
+                platform::Capture::start(controller, actions, prompt)
+            })
+            .await
+            .unwrap_or_else(|e| Err(anyhow::anyhow!("starting capture: {e}")));
+            match started {
                 Ok(c) => {
                     let _ = self.capture.set(c);
                     *self.capture_error.lock().unwrap() = None;
@@ -1450,6 +1458,7 @@ impl Node {
                 self.apply_actions(actions);
             }
             Message::Enter { x, y } if self.target.get().is_some() => {
+                debug!("cursor ← {id}");
                 // Being controlled: our own cursor comes home if it's off on another computer
                 // (perhaps this one: its own mouse took the cursor back, or we both crossed at
                 // once), and our capture stands down until they leave.

@@ -72,7 +72,7 @@ that `Enter`, brings its own cursor home.
 |---|---|---|---|
 | macOS | Quartz event tap over the whole screen | HID-level `CGEventPost` (drags, click counts, modifier flags, pixel scrolling); wakes the display | CoreGraphics |
 | Linux, layer-shell compositors (Hyprland, Sway, KDE…) | 1-px overlay strips on edges that lead somewhere; relative-pointer motion while resting on one; pointer lock + exclusive keyboard + shortcuts inhibitor while remote | `zwlr_virtual_pointer` + `zwp_virtual_keyboard` (no root), else uinput | `xdg-output` |
-| Linux, GNOME | not yet (needs the InputCapture portal + libei) | uinput absolute pointer + keyboard (after `enable-input.sh` grants `/dev/uinput` via udev `uaccess`) | `xdg-output` |
+| Linux, GNOME | InputCapture portal: pointer barriers on the stretches of edge that lead somewhere, then everything over libei while remote. GNOME asks each time MouseTail starts. Barriers sit on screen edges, so injected positions and returning pointers keep off them (the middle of the pixel; a pixel in) | uinput absolute pointer + keyboard (after `enable-input.sh` grants `/dev/uinput` via udev `uaccess`) | `xdg-output` |
 
 Key codes travel as evdev codes. The receiving side translates for its platform: a Mac
 controlling Linux gets the Command remap (below); Linux controlling a Mac is positional (Super
